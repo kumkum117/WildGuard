@@ -1,0 +1,31 @@
+# Credentials — never commit this
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Model weights (large binary files)
+*.pt
+*.pth
+*.onnx
+
+# Database (auto-created at runtime)
+wildguard_alerts.db
+
+# Alerts/snapshots (runtime output)
+alerts/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
