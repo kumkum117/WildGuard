@@ -1,0 +1,8 @@
+/* App-specific styles */
+.app-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(16, 185, 129, 0.08), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(6, 95, 70, 0.12), transparent 60%),
+    #0A0E0C;
+}
