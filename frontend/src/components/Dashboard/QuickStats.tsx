@@ -4,19 +4,42 @@ import { motion } from 'framer-motion';
 import AnimatedCounter from '../Common/AnimatedCounter';
 import { useAlertStore } from '../../store/alertStore';
 import { useDetectionStore } from '../../store/detectionStore';
+import { useConnectionStore } from '../../store/connectionStore';
 
 export default function QuickStats() {
   const alerts = useAlertStore((s) => s.alerts);
   const cameras = useDetectionStore((s) => s.cameras);
+  const detections = useDetectionStore((s) => s.detections);
+  const live = useConnectionStore((s) => s.mode === 'live');
+  const health = useConnectionStore((s) => s.health);
   const online = cameras.filter((c) => c.status === 'online').length;
-  const today = alerts.length;
 
-  const stats = [
-    { label: 'Active cameras', value: online, suffix: `/${cameras.length}`, Icon: Camera },
-    { label: 'Alerts today', value: today, suffix: '', Icon: Bell },
-    { label: 'AI confidence', value: 98, suffix: '%', Icon: Cpu },
-    { label: 'System uptime', value: 99, suffix: '.94%', Icon: Activity },
-  ];
+  let stats;
+  if (live) {
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const today = alerts.filter((a) => new Date(a.timestamp) >= midnight).length;
+    const recent = detections.slice(0, 10);
+    const confidence = recent.length
+      ? Math.round(recent.reduce((sum, d) => sum + d.confidence, 0) / recent.length)
+      : null;
+    const uptimeMin = Math.floor((health?.uptime_s ?? 0) / 60);
+    stats = [
+      { label: 'Active cameras', value: online, suffix: `/${cameras.length}`, Icon: Camera },
+      { label: 'Alerts today', value: today, suffix: '', Icon: Bell },
+      { label: 'AI confidence', value: confidence, suffix: '%', Icon: Cpu },
+      uptimeMin < 120
+        ? { label: 'System uptime', value: uptimeMin, suffix: ' min', Icon: Activity }
+        : { label: 'System uptime', value: Math.floor(uptimeMin / 60), suffix: ' h', Icon: Activity },
+    ];
+  } else {
+    stats = [
+      { label: 'Active cameras', value: online, suffix: `/${cameras.length}`, Icon: Camera },
+      { label: 'Alerts today', value: alerts.length, suffix: '', Icon: Bell },
+      { label: 'AI confidence', value: 98, suffix: '%', Icon: Cpu },
+      { label: 'System uptime', value: 99, suffix: '.94%', Icon: Activity },
+    ];
+  }
 
   return (
     <div data-testid="quick-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -38,8 +61,14 @@ export default function QuickStats() {
             </div>
           </div>
           <div className="mt-3 font-display text-3xl font-semibold tracking-tight">
-            <AnimatedCounter value={s.value} />
-            <span className="text-white/40 text-xl">{s.suffix}</span>
+            {s.value === null ? (
+              <span className="font-mono text-white/40">—</span>
+            ) : (
+              <>
+                <AnimatedCounter value={s.value} />
+                <span className="text-white/40 text-xl">{s.suffix}</span>
+              </>
+            )}
           </div>
         </motion.div>
       ))}

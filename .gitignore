@@ -20,8 +20,24 @@ venv/
 # Database (auto-created at runtime)
 wildguard_alerts.db
 
-# Alerts/snapshots (runtime output)
-alerts/
+# Alerts/snapshots (runtime output). Anchored to the repo root: an unanchored
+# "alerts/" also matched frontend/src/components/Alerts/ on case-insensitive
+# file systems (Windows), which kept those components out of git.
+/alerts/
+
+# Server runtime data: uploaded media + analysis results, model caches,
+# camera fleet / settings saved from the dashboard
+data/analyses/
+data/cache/
+data/wildguard_config.json
+data/sessions.json
+
+# SQLite write-ahead files
+*.db-wal
+*.db-shm
+
+# TypeScript incremental build info
+*.tsbuildinfo
 
 # VS Code
 .vscode/

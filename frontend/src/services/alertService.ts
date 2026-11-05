@@ -1,16 +1,26 @@
-// @ts-nocheck
 import type { Alert } from '../types';
+import { backend, mapAlert } from './backend';
+import { isLive } from '../store/connectionStore';
+import { useAlertStore } from '../store/alertStore';
 
-// Mocked alert service. Swap fetch calls to real API when ready.
+// Alert triage. In live mode the status is stored by the backend (and pushed to
+// every open dashboard); in demo mode it only changes the local store.
+async function setStatus(alert: Alert, action: 'acknowledge' | 'resolve') {
+  const store = useAlertStore.getState();
+  if (action === 'acknowledge') store.acknowledge(alert.id);
+  else store.resolve(alert.id);
+  if (!isLive() || alert.backendId === undefined) return;
+  try {
+    store.upsertAlert(mapAlert(await backend.alertAction(alert.backendId, action)));
+  } catch {
+    store.upsertAlert({ ...alert }); // revert the optimistic update
+  }
+}
+
 export const alertService = {
   list(): Alert[] {
-    // In-memory mock: real impl will be `return apiFetch('/api/alerts')`
-    return [];
+    return useAlertStore.getState().alerts;
   },
-  async acknowledge(_id: string): Promise<void> {
-    await new Promise((r) => setTimeout(r, 250));
-  },
-  async resolve(_id: string): Promise<void> {
-    await new Promise((r) => setTimeout(r, 250));
-  },
+  acknowledge: (alert: Alert) => setStatus(alert, 'acknowledge'),
+  resolve: (alert: Alert) => setStatus(alert, 'resolve'),
 };

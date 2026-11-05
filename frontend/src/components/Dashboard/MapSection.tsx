@@ -5,6 +5,7 @@ import { useAlertStore } from '../../store/alertStore';
 import { MapPin, Shield, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../../utils/cn';
+import { hasGps } from '../../utils/formatters';
 
 // Project (lat, lng) into 0–100% map coordinates.
 const LAT_MIN = 12.958;
@@ -60,9 +61,9 @@ const zoneStyle = {
 };
 
 export default function MapSection() {
-  const cameras = useDetectionStore((s) => s.cameras);
+  const cameras = useDetectionStore((s) => s.cameras).filter((c) => hasGps(c.location));
   const alerts = useAlertStore((s) => s.alerts);
-  const activeAlerts = alerts.filter((a) => a.status === 'active').slice(0, 6);
+  const activeAlerts = alerts.filter((a) => a.status === 'active' && hasGps(a.location)).slice(0, 6);
   const [showZones, setShowZones] = useState(true);
 
   return (

@@ -4,6 +4,7 @@
 import NotificationSettings from './NotificationSettings';
 import CameraManagement from './CameraManagement';
 import AccountSettings from './AccountSettings';
+import DetectionSettings from './DetectionSettings';
 
 export default function SettingsPageInner() {
   return (
@@ -13,6 +14,7 @@ export default function SettingsPageInner() {
         <CameraManagement />
       </div>
       <div className="space-y-4">
+        <DetectionSettings />
         <AccountSettings />
       </div>
     </div>

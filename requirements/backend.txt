@@ -1,0 +1,18 @@
+# WildGuard backend — Python 3.10+ (developed and tested on 3.14)
+#   py -m pip install -r requirements/backend.txt
+#
+# Versions are the ones the project was tested with; newer minor versions
+# should work.
+
+ultralytics>=8.4.25          # YOLOv8 / YOLO-World detector
+torch>=2.10.0                # CPU build is fine; install a CUDA build for an NVIDIA GPU
+torchvision>=0.25.0
+opencv-python>=4.11.0.86     # video capture, night-vision enhancement, encoding
+numpy>=2.4
+pillow>=12.1
+flask>=3.1                   # API server (backend/server.py)
+python-dotenv>=1.2           # reads the project .env (alert e-mail settings)
+
+# CLIP — species verification (stage 2) and YOLO-World text prompts.
+# The weights (~350 MB) download to ~/.cache/clip on first run.
+clip @ git+https://github.com/ultralytics/CLIP.git

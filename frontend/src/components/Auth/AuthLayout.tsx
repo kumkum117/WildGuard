@@ -43,7 +43,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
                 <Leaf size={22} className="text-forest-900" />
               </div>
               <span className="font-mono text-[11px] uppercase tracking-[0.32em] text-moss-300/90">
-                Sentinel · OS
+                {APP_NAME}
               </span>
             </div>
             <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-semibold leading-[1.02] tracking-tight">

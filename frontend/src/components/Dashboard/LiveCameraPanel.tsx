@@ -1,10 +1,14 @@
 // @ts-nocheck
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera as CameraIcon, Radio, MapPin } from 'lucide-react';
+import { Camera as CameraIcon, Radio, MapPin, Moon, Cpu, CameraOff } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useDetectionStore } from '../../store/detectionStore';
-import { formatTime } from '../../utils/formatters';
+import { formatTime, formatGps } from '../../utils/formatters';
 import { cn } from '../../utils/cn';
+import LiveFeed from '../Common/LiveFeed';
+
+const RECENT_MS = 2 * 60 * 1000;
 
 export default function LiveCameraPanel() {
   const cameras = useDetectionStore((s) => s.cameras);
@@ -12,6 +16,7 @@ export default function LiveCameraPanel() {
   const threatState = useDetectionStore((s) => s.threatState);
   const [activeCamId, setActiveCamId] = useState<string | null>(null);
   const [now, setNow] = useState(new Date());
+  const nav = useNavigate();
 
   useEffect(() => {
     const i = setInterval(() => setNow(new Date()), 1000);
@@ -19,12 +24,31 @@ export default function LiveCameraPanel() {
   }, []);
 
   const activeCam = cameras.find((c) => c.id === activeCamId) || cameras[0];
-  const latestDet = useMemo(
-    () => detections.find((d) => d.cameraId === activeCam?.id) || detections[0],
-    [detections, activeCam]
-  );
+  const latestDet = useMemo(() => {
+    if (!activeCam?.live) return detections.find((d) => d.cameraId === activeCam?.id) || detections[0];
+    // Live: only this camera's recent sightings (boxes are drawn by the server).
+    const d = detections.find((x) => x.cameraId === activeCam.id);
+    return d && Date.now() - new Date(d.timestamp).getTime() < RECENT_MS ? d : undefined;
+  }, [detections, activeCam]);
 
-  if (!activeCam) return null;
+  if (!activeCam) {
+    return (
+      <div className="glass rounded-3xl border border-white/8 aspect-[16/10] grid place-items-center text-center p-6">
+        <div>
+          <CameraOff size={28} className="mx-auto text-white/30" />
+          <div className="mt-3 font-display text-lg font-semibold tracking-tight">No cameras in the fleet</div>
+          <div className="mt-1 text-sm text-white/45">Add a webcam, RTSP camera or video feed to start monitoring.</div>
+          <button
+            onClick={() => nav('/settings')}
+            className="mt-4 text-xs px-3 py-2 rounded-lg bg-moss-500/15 hover:bg-moss-500/25 border border-moss-500/30 text-moss-300 transition"
+          >
+            Open camera settings
+          </button>
+        </div>
+      </div>
+    );
+  }
+  const night = activeCam.lighting?.is_night;
 
   const isThreat = threatState === 'alert';
   const isDetected = threatState === 'detected';
@@ -43,16 +67,25 @@ export default function LiveCameraPanel() {
     >
       {/* Image */}
       <div className="relative aspect-[16/10] overflow-hidden group">
-        <motion.img
-          key={activeCam.id}
-          src={activeCam.imageUrl}
-          alt={activeCam.name}
-          initial={{ scale: 1.06, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.7 }}
-          className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-[1.6s]"
+        {activeCam.live ? (
+          <LiveFeed key={activeCam.id} camera={activeCam} mode="stream" />
+        ) : (
+          <motion.img
+            key={activeCam.id}
+            src={activeCam.imageUrl}
+            alt={activeCam.name}
+            initial={{ scale: 1.06, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.7 }}
+            className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-[1.6s]"
+          />
+        )}
+        <div
+          className={cn(
+            'absolute inset-0 bg-gradient-to-t pointer-events-none',
+            activeCam.live ? 'from-forest-900/90 via-transparent to-forest-900/40' : 'from-forest-900/95 via-forest-900/30 to-transparent'
+          )}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-forest-900/95 via-forest-900/30 to-transparent" />
         <div className="scanline" />
 
         {/* HUD top */}
@@ -65,7 +98,7 @@ export default function LiveCameraPanel() {
               </span>
             </div>
             <div className="font-mono text-[11px] text-white/70 tracking-wide">
-              {activeCam.id} · {activeCam.name.split('—')[1]?.trim() || activeCam.name}
+              {activeCam.id} · {activeCam.location.name}
             </div>
           </div>
           <div className="text-right font-mono text-[11px] text-white/60">
@@ -74,9 +107,9 @@ export default function LiveCameraPanel() {
           </div>
         </div>
 
-        {/* Bounding box overlay */}
+        {/* Bounding box overlay (demo only — live frames arrive annotated) */}
         <AnimatePresence>
-          {latestDet && (
+          {latestDet && !activeCam.live && (
             <motion.div
               key={latestDet.id}
               initial={{ opacity: 0, scale: 0.95 }}
@@ -148,11 +181,24 @@ export default function LiveCameraPanel() {
             <div className="flex items-center gap-3 text-xs text-white/60">
               <span className="inline-flex items-center gap-1 font-mono">
                 <MapPin size={12} />
-                {activeCam.location.lat.toFixed(4)}°N, {activeCam.location.lng.toFixed(4)}°E
+                {formatGps(activeCam.location.lat, activeCam.location.lng)}
               </span>
-              <span className="inline-flex items-center gap-1">
-                <Radio size={12} /> 4G · 78%
-              </span>
+              {activeCam.live ? (
+                <>
+                  <span className="inline-flex items-center gap-1 font-mono">
+                    <Cpu size={12} /> {activeCam.fps?.toFixed(0) ?? 0} fps · AI {Math.round(activeCam.inferenceMs ?? 0)} ms
+                  </span>
+                  {night && (
+                    <span className="inline-flex items-center gap-1 font-mono text-moss-300">
+                      <Moon size={12} /> {activeCam.lighting?.mode === 'infrared' ? 'IR night vision' : 'Low-light enhanced'}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <Radio size={12} /> 4G · 78%
+                </span>
+              )}
             </div>
           </div>
           {isThreat && (
@@ -186,7 +232,11 @@ export default function LiveCameraPanel() {
                   : 'border-white/8 hover:border-white/20 opacity-75 hover:opacity-100'
               )}
             >
-              <img src={c.imageUrl} alt={c.name} className="absolute inset-0 h-full w-full object-cover" />
+              {c.live ? (
+                <LiveFeed camera={c} mode="poll" intervalMs={3000} />
+              ) : (
+                <img src={c.imageUrl} alt={c.name} className="absolute inset-0 h-full w-full object-cover" />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-forest-900/90 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 px-2 py-1 text-left">
                 <div className="flex items-center gap-1.5">
@@ -198,6 +248,12 @@ export default function LiveCameraPanel() {
               </div>
               {c.status === 'maintenance' && (
                 <div className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-amber2-500" />
+              )}
+              {c.live && c.status === 'offline' && (
+                <div className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-threat-500" />
+              )}
+              {c.live && c.lighting?.is_night && (
+                <Moon size={10} className="absolute top-1 left-1 text-moss-300" />
               )}
             </button>
           );

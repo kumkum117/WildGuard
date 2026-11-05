@@ -2,19 +2,26 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDetectionStore } from '../../store/detectionStore';
 import { cn } from '../../utils/cn';
-import { Camera as CameraIcon, MapPin } from 'lucide-react';
+import { Camera as CameraIcon, MapPin, Moon } from 'lucide-react';
+import LiveFeed from '../Common/LiveFeed';
+import { formatGps } from '../../utils/formatters';
 
 interface Props {
   cameraId: string;
+  mode?: 'stream' | 'poll';
 }
 
-export default function CameraFeed({ cameraId }: Props) {
+const RECENT_MS = 2 * 60 * 1000;
+
+export default function CameraFeed({ cameraId, mode = 'stream' }: Props) {
   const cameras = useDetectionStore((s) => s.cameras);
   const detections = useDetectionStore((s) => s.detections);
   const cam = cameras.find((c) => c.id === cameraId);
   if (!cam) return null;
 
-  const latest = detections.find((d) => d.cameraId === cameraId);
+  const found = detections.find((d) => d.cameraId === cameraId);
+  // Live tiles only badge recent sightings; the boxes themselves are in the frame.
+  const latest = cam.live && found && Date.now() - new Date(found.timestamp).getTime() > RECENT_MS ? undefined : found;
   const isThreat = latest?.threatLevel === 'high';
   const isMid = latest?.threatLevel === 'medium';
 
@@ -32,8 +39,17 @@ export default function CameraFeed({ cameraId }: Props) {
       data-testid={`camera-feed-${cameraId}`}
     >
       <div className="relative aspect-[4/3]">
-        <img src={cam.imageUrl} alt={cam.name} className="absolute inset-0 h-full w-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-forest-900/95 via-forest-900/30 to-transparent" />
+        {cam.live ? (
+          <LiveFeed camera={cam} mode={mode} intervalMs={500} />
+        ) : (
+          <img src={cam.imageUrl} alt={cam.name} className="absolute inset-0 h-full w-full object-cover" />
+        )}
+        <div
+          className={cn(
+            'absolute inset-0 bg-gradient-to-t pointer-events-none',
+            cam.live ? 'from-forest-900/90 via-transparent to-forest-900/30' : 'from-forest-900/95 via-forest-900/30 to-transparent'
+          )}
+        />
         <div className="scanline" />
 
         <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
@@ -41,14 +57,15 @@ export default function CameraFeed({ cameraId }: Props) {
             <span className="h-1.5 w-1.5 rounded-full bg-threat-500 animate-blink" />
             <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-white/80">Live</span>
           </div>
-          <span className="font-mono text-[10px] text-white/70 bg-black/40 px-2 py-0.5 rounded">
+          <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-white/70 bg-black/40 px-2 py-0.5 rounded">
+            {cam.live && cam.lighting?.is_night && <Moon size={10} className="text-moss-300" />}
             {cam.id}
           </span>
         </div>
 
         {/* Bounding box */}
         <AnimatePresence>
-          {latest && (
+          {latest && !cam.live && (
             <motion.div
               key={latest.id}
               initial={{ opacity: 0, scale: 0.95 }}
@@ -92,10 +109,19 @@ export default function CameraFeed({ cameraId }: Props) {
           <div className="flex items-center justify-between">
             <div>
               <div className="inline-flex items-center gap-1.5 text-[11px] text-white/70 font-medium">
-                <CameraIcon size={11} /> {cam.name.split('—')[1]?.trim() || cam.name}
+                <CameraIcon size={11} /> {cam.location.name}
               </div>
               <div className="mt-0.5 inline-flex items-center gap-1.5 font-mono text-[10px] text-white/45">
-                <MapPin size={9} /> {cam.location.lat.toFixed(3)}°, {cam.location.lng.toFixed(3)}°
+                {cam.live ? (
+                  <>
+                    {cam.fps?.toFixed(0) ?? 0} fps · AI {Math.round(cam.inferenceMs ?? 0)} ms
+                    {cam.lighting?.is_night && ` · ${cam.lighting.mode === 'infrared' ? 'IR' : 'low-light'}`}
+                  </>
+                ) : (
+                  <>
+                    <MapPin size={9} /> {formatGps(cam.location.lat, cam.location.lng)}
+                  </>
+                )}
               </div>
             </div>
             {latest && (
@@ -109,7 +135,7 @@ export default function CameraFeed({ cameraId }: Props) {
                     : 'bg-moss-500/15 text-moss-300 border border-moss-500/30'
                 )}
               >
-                {latest.threatLevel}
+                {cam.live ? `${latest.species} · ${latest.threatLevel}` : latest.threatLevel}
               </div>
             )}
           </div>

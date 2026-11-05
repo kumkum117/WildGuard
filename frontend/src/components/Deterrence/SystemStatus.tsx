@@ -2,12 +2,18 @@
 import { motion } from 'framer-motion';
 import { useDeterrenceStore } from '../../store/deterrenceStore';
 import { useDetectionStore } from '../../store/detectionStore';
-import { Cpu, Radio, Wifi, Battery } from 'lucide-react';
+import { Cpu, Radio, Wifi, Battery, ScanEye, Moon } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { useConnectionStore } from '../../store/connectionStore';
 
 export default function SystemStatus() {
   const { siren, lights, sound, mode } = useDeterrenceStore();
   const threatState = useDetectionStore((s) => s.threatState);
+  const cameras = useDetectionStore((s) => s.cameras);
+  const live = useConnectionStore((s) => s.mode === 'live');
+  const health = useConnectionStore((s) => s.health);
+  const settings = useConnectionStore((s) => s.settings);
+  const nightCams = cameras.filter((c) => c.lighting?.is_night).length;
 
   const armed = siren || lights;
   return (
@@ -38,12 +44,41 @@ export default function SystemStatus() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <StatusTile icon={<Cpu size={13} />} label="AI compute" value="6.2 TOPS" hint="Edge unit" />
-        <StatusTile icon={<Radio size={13} />} label="LoRa mesh" value="strong" hint="12 nodes" />
-        <StatusTile icon={<Wifi size={13} />} label="Uplink" value="4G · 78%" hint="Tower A" />
-        <StatusTile icon={<Battery size={13} />} label="Power" value="grid + solar" hint="6.4 kWh" />
-      </div>
+      {live && health ? (
+        <div className="grid grid-cols-2 gap-3">
+          <StatusTile
+            icon={<Cpu size={13} />}
+            label="AI engine"
+            value={health.engine.model_type.split(' (')[0]}
+            hint={`${health.engine.device.toUpperCase()} · ${Math.round(health.engine.avg_inference_ms)} ms`}
+          />
+          <StatusTile
+            icon={<ScanEye size={13} />}
+            label="Species check"
+            value={health.engine.classifier_enabled ? 'CLIP verified' : 'detector only'}
+            hint={`${health.engine.species.length} species`}
+          />
+          <StatusTile
+            icon={<Moon size={13} />}
+            label="Night vision"
+            value={(settings?.night_mode ?? 'auto').toUpperCase()}
+            hint={nightCams ? `${nightCams} feed${nightCams > 1 ? 's' : ''} in night mode` : 'all feeds daylight'}
+          />
+          <StatusTile
+            icon={<Wifi size={13} />}
+            label="Cameras"
+            value={`${health.cameras.online} / ${health.cameras.total} online`}
+            hint={`${health.engine.inference_count.toLocaleString()} frames analysed`}
+          />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <StatusTile icon={<Cpu size={13} />} label="AI compute" value="6.2 TOPS" hint="Edge unit" />
+          <StatusTile icon={<Radio size={13} />} label="LoRa mesh" value="strong" hint="12 nodes" />
+          <StatusTile icon={<Wifi size={13} />} label="Uplink" value="4G · 78%" hint="Tower A" />
+          <StatusTile icon={<Battery size={13} />} label="Power" value="grid + solar" hint="6.4 kWh" />
+        </div>
+      )}
 
       <div className="mt-5 grid grid-cols-3 gap-2 text-center">
         <Pill label="Mode" value={mode.toUpperCase()} tone="moss" />

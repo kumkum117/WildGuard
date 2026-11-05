@@ -2,7 +2,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useActivityStore } from '../../store/activityStore';
 import { formatRelative } from '../../utils/formatters';
-import { CheckCircle2, AlertTriangle, Activity, Siren as SirenIcon, Eye } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Activity, Siren as SirenIcon, Eye, ScanSearch } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 const iconMap = {
@@ -11,6 +11,7 @@ const iconMap = {
   system: CheckCircle2,
   deterrence: SirenIcon,
   auth: Activity,
+  analysis: ScanSearch,
 } as const;
 
 const levelTone = {

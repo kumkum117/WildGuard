@@ -75,6 +75,7 @@ class WildGuardPipeline:
 
     def stop(self) -> None:
         self.stream.stop()
+        self.alert_manager.shutdown()
 
     # ------------------------------------------------------------------
     # Read interface (called from Flask / other threads)

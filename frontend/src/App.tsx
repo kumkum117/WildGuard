@@ -5,14 +5,18 @@ import { useLocation } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { useEffect } from 'react';
 import { useSocket } from './hooks/useSocket';
+import { useToastStore } from './store/toastStore';
+import { setUnauthorizedHandler } from './services/api';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import DetectionPage from './pages/DetectionPage';
 import AlertsPage from './pages/AlertsPage';
 import DeterrencePage from './pages/DeterrencePage';
 import SettingsPage from './pages/SettingsPage';
+import AnalyzePage from './pages/AnalyzePage';
 import Sidebar from './components/Layout/Sidebar';
 import Header from './components/Layout/Header';
+import ToastOverlay from './components/Common/ToastOverlay';
 import './App.css';
 
 const RequireAuth = ({ children }: { children: React.ReactNode }) => {
@@ -23,9 +27,9 @@ const RequireAuth = ({ children }: { children: React.ReactNode }) => {
 const Shell = ({ children }: { children: React.ReactNode }) => (
   <div className="app-shell flex">
     <Sidebar />
-    <div className="flex-1 flex flex-col min-h-screen lg:ml-64">
+    <div className="flex-1 flex flex-col min-h-screen lg:ml-60">
       <Header />
-      <main className="flex-1 px-4 sm:px-6 lg:px-10 py-6">{children}</main>
+      <main className="flex-1 px-4 sm:px-6 lg:px-8 py-5">{children}</main>
     </div>
   </div>
 );
@@ -36,11 +40,28 @@ function App() {
   // Boot socket simulation when authed
   useSocket(isAuthed);
 
+  // The backend rejected our session (expired, revoked, or a demo-mode sign-in
+  // while the server was offline): sign out and ask for a real code.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      if (!useAuthStore.getState().isAuthenticated) return;
+      useAuthStore.getState().logout();
+      useToastStore.getState().push({
+        title: 'Please sign in again',
+        message: 'Your session has expired or was signed in while the server was offline.',
+        level: 'info',
+        duration: 6000,
+      });
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
+
   useEffect(() => {
     document.documentElement.classList.add('dark');
   }, []);
 
   return (
+    <>
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
         <Route path="/login" element={<LoginPage />} />
@@ -85,6 +106,16 @@ function App() {
           }
         />
         <Route
+          path="/analyze"
+          element={
+            <RequireAuth>
+              <Shell>
+                <AnalyzePage />
+              </Shell>
+            </RequireAuth>
+          }
+        />
+        <Route
           path="/settings"
           element={
             <RequireAuth>
@@ -97,6 +128,8 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AnimatePresence>
+    <ToastOverlay />
+    </>
   );
 }
 

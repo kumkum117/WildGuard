@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { useDetectionStore } from '../../store/detectionStore';
 import { cn } from '../../utils/cn';
 import { ShieldAlert, ShieldCheck, Eye } from 'lucide-react';
+import { useConnectionStore } from '../../store/connectionStore';
+import { formatRelative } from '../../utils/formatters';
 
 const config = {
   safe: {
@@ -49,6 +51,18 @@ const config = {
 
 export default function StatusIndicator() {
   const threat = useDetectionStore((s) => s.threatState);
+  const cameras = useDetectionStore((s) => s.cameras);
+  const detections = useDetectionStore((s) => s.detections);
+  const online = cameras.filter((c) => c.status === 'online').length;
+  const total = cameras.length;
+  const live = useConnectionStore((s) => s.mode === 'live');
+  const avgConfidence = detections.length
+    ? Math.round(detections.slice(0, 10).reduce((sum, d) => sum + d.confidence, 0) / Math.min(detections.length, 10))
+    : live ? null : 98;
+  const lastFrame = cameras
+    .map((cam) => (cam.lastFrameAt ? new Date(cam.lastFrameAt).getTime() : 0))
+    .reduce((a, b) => Math.max(a, b), 0);
+  const lastScan = !live ? 'just now' : lastFrame ? formatRelative(new Date(lastFrame).toISOString()) : '—';
   const c = config[threat];
 
   return (
@@ -118,9 +132,9 @@ export default function StatusIndicator() {
           </div>
           <div className="text-sm text-white/55 mt-1.5">{c.sub}</div>
           <div className="mt-4 space-y-1.5">
-            <Row label="Cameras online" value="5 / 6" tone="moss" />
-            <Row label="AI confidence" value="98.4%" tone="moss" />
-            <Row label="Last scan" value="just now" tone="white" />
+            <Row label="Cameras online" value={total ? `${online} / ${total}` : '— / —'} tone="moss" />
+            <Row label="AI confidence" value={avgConfidence === null ? '—' : `${avgConfidence}%`} tone="moss" />
+            <Row label="Last scan" value={lastScan} tone="white" />
           </div>
         </div>
       </div>

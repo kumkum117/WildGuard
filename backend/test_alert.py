@@ -76,8 +76,9 @@ def main() -> None:
     print("  trigger() returned (no DB row expected — below threshold)\n")
 
     # Give the email thread a moment to attempt delivery before we exit.
-    print("Waiting 4 s for background email threads to complete...")
-    time.sleep(4)
+    # SMTP handshake (STARTTLS + login + send) can take up to ~15 s on Gmail.
+    print("Waiting 20 s for background email threads to complete...")
+    time.sleep(20)
 
     # --- Show DB rows ---
     print("\nLast 5 rows in wildguard_alerts.db:")

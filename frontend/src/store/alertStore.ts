@@ -8,6 +8,7 @@ interface AlertState {
   search: string;
   setAlerts: (a: Alert[]) => void;
   addAlert: (a: Alert) => void;
+  upsertAlert: (a: Alert) => void;
   acknowledge: (id: string) => void;
   resolve: (id: string) => void;
   setFilter: (f: AlertState['filter']) => void;
@@ -20,6 +21,12 @@ export const useAlertStore = create<AlertState>((set) => ({
   search: '',
   setAlerts: (alerts) => set({ alerts }),
   addAlert: (a) => set((s) => ({ alerts: [a, ...s.alerts].slice(0, 200) })),
+  upsertAlert: (a) =>
+    set((s) =>
+      s.alerts.some((x) => x.id === a.id)
+        ? { alerts: s.alerts.map((x) => (x.id === a.id ? { ...x, ...a } : x)) }
+        : { alerts: [a, ...s.alerts].slice(0, 200) }
+    ),
   acknowledge: (id) =>
     set((s) => ({
       alerts: s.alerts.map((a) => (a.id === id ? { ...a, status: 'acknowledged' } : a)),

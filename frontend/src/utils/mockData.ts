@@ -84,6 +84,10 @@ export const generateActivity = (
       message: `Ranger session refreshed`,
       level: 'info',
     },
+    analysis: {
+      message: `Uploaded footage analysed`,
+      level: 'info',
+    },
   };
   return {
     id: `EVT-${Date.now()}-${activityCounter}`,

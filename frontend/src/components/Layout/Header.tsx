@@ -1,19 +1,23 @@
 // @ts-nocheck
 import { useLocation, useNavigate, NavLink } from 'react-router-dom';
-import { Bell, Search, LogOut, Menu, X, LayoutDashboard, Radar, ShieldAlert, Siren, Settings as SettingsIcon } from 'lucide-react';
+import { Search, LogOut, Menu, X, LayoutDashboard, Radar, ShieldAlert, Siren, Settings as SettingsIcon, ScanSearch } from 'lucide-react';
+import NotificationCenter from './NotificationCenter';
+import ConnectionBadge from './ConnectionBadge';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useAlertStore } from '../../store/alertStore';
 import { useDetectionStore } from '../../store/detectionStore';
 import { cn } from '../../utils/cn';
+import { APP_NAME } from '../../utils/constants';
 
 const titleMap: Record<string, string> = {
-  '/': 'Operations Overview',
-  '/detection': 'Live Detection Monitor',
-  '/alerts': 'Alert Management',
-  '/deterrence': 'Deterrence Control',
-  '/settings': 'System Settings',
+  '/': 'Dashboard',
+  '/detection': 'Live Detection',
+  '/alerts': 'Alerts',
+  '/deterrence': 'Deterrence',
+  '/analyze': 'Media Analysis',
+  '/settings': 'Settings',
 };
 
 const mobileNav = [
@@ -21,122 +25,120 @@ const mobileNav = [
   { to: '/detection', label: 'Live Detection', Icon: Radar },
   { to: '/alerts', label: 'Alerts', Icon: ShieldAlert },
   { to: '/deterrence', label: 'Deterrence', Icon: Siren },
+  { to: '/analyze', label: 'Media Analysis', Icon: ScanSearch },
   { to: '/settings', label: 'Settings', Icon: SettingsIcon },
 ];
+
+const threatLabel: Record<string, string> = {
+  safe: 'Safe',
+  monitoring: 'Monitoring',
+  detected: 'Detected',
+  alert: 'ALERT',
+};
 
 export default function Header() {
   const loc = useLocation();
   const nav = useNavigate();
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const alerts = useAlertStore((s) => s.alerts);
+  const search = useAlertStore((s) => s.search);
+  const setSearch = useAlertStore((s) => s.setSearch);
   const threatState = useDetectionStore((s) => s.threatState);
-  const activeCount = alerts.filter((a) => a.status === 'active').length;
   const title = titleMap[loc.pathname] || 'WildGuard';
 
-  const onLogout = () => {
-    logout();
-    nav('/login');
-  };
+  const onLogout = () => { logout(); nav('/login'); };
 
   return (
     <>
       <header
         data-testid="header"
-        className="sticky top-0 z-20 backdrop-blur-xl bg-forest-900/60 border-b border-white/5"
+        className="sticky top-0 z-20 h-14 flex items-center px-4 sm:px-6 lg:px-8 gap-4 bg-[#0C0D0C]/90 backdrop-blur-md border-b border-white/[0.06]"
       >
-        <div className="px-4 sm:px-6 lg:px-10 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              data-testid="mobile-menu-toggle"
-              onClick={() => setMobileOpen(true)}
-              className="lg:hidden h-9 w-9 grid place-items-center rounded-lg bg-white/5 border border-white/10"
-            >
-              <Menu size={18} />
+        {/* Left: mobile menu + page title */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <button
+            data-testid="mobile-menu-toggle"
+            onClick={() => setMobileOpen(true)}
+            className="lg:hidden h-8 w-8 grid place-items-center rounded-md bg-white/5 border border-white/10"
+          >
+            <Menu size={16} />
+          </button>
+          <h1 className="font-display text-[15px] font-semibold tracking-tight truncate text-white/90">
+            {title}
+          </h1>
+        </div>
+
+        {/* Center: search */}
+        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.07] w-56 lg:w-72">
+          <Search size={13} className="text-white/30 shrink-0" />
+          <input
+            data-testid="header-search"
+            className="bg-transparent outline-none text-[13px] placeholder-white/25 w-full"
+            placeholder="Search alerts…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onFocus={() => { if (loc.pathname !== '/alerts') nav('/alerts'); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && loc.pathname !== '/alerts') nav('/alerts'); }}
+          />
+          {search ? (
+            <button onClick={() => setSearch('')} className="text-white/30 hover:text-white/70 transition shrink-0">
+              <X size={12} />
             </button>
-            <div className="min-w-0">
-              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-moss-400/80">
-                WildGuard · Sentinel
-              </div>
-              <h1 className="font-display text-xl sm:text-2xl font-semibold tracking-tight truncate">
-                {title}
-              </h1>
+          ) : (
+            <kbd className="font-mono text-[10px] px-1 py-0.5 rounded bg-white/5 border border-white/8 text-white/30 shrink-0">⌘K</kbd>
+          )}
+        </div>
+
+        {/* Right: threat state + bells + user */}
+        <div className="flex items-center gap-2">
+          <ConnectionBadge />
+          {/* Threat badge */}
+          <div
+            data-testid="threat-pill"
+            className={cn(
+              'hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono font-medium uppercase tracking-wider border',
+              threatState === 'alert'
+                ? 'bg-threat-500/10 border-threat-500/30 text-threat-400'
+                : threatState === 'detected'
+                ? 'bg-amber2-500/10 border-amber2-500/30 text-amber2-400'
+                : 'bg-white/[0.03] border-white/[0.08] text-white/40'
+            )}
+          >
+            <span className={cn(
+              'h-1.5 w-1.5 rounded-full',
+              threatState === 'alert' ? 'bg-threat-500 animate-blink'
+              : threatState === 'detected' ? 'bg-amber2-500 animate-blink'
+              : 'bg-moss-400'
+            )} />
+            {threatLabel[threatState]}
+          </div>
+
+          {/* Notification centre (grouped, unread badge) */}
+          <NotificationCenter />
+
+          {/* Divider */}
+          <div className="hidden sm:block h-5 w-px bg-white/[0.08]" />
+
+          {/* User */}
+          <div className="hidden sm:flex items-center gap-2">
+            <div className="h-7 w-7 rounded-full bg-gradient-to-br from-moss-500 to-moss-700 grid place-items-center text-[11px] font-semibold text-forest-900">
+              {(user?.name || 'R')[0]}
+            </div>
+            <div className="hidden md:block">
+              <div className="text-[12px] font-medium leading-tight text-white/80">{user?.name || 'Ranger'}</div>
+              <div className="font-mono text-[9px] text-white/35 uppercase tracking-wider">{user?.role}</div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="hidden md:flex items-center gap-2 px-3 py-2 glass rounded-xl w-64">
-              <Search size={15} className="text-white/40" />
-              <input
-                data-testid="header-search"
-                className="bg-transparent outline-none text-sm placeholder-white/30 w-full"
-                placeholder="Search cameras, species, locations…"
-              />
-              <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/40">
-                ⌘K
-              </kbd>
-            </div>
-
-            <div
-              data-testid="threat-pill"
-              className={cn(
-                'pill border',
-                threatState === 'alert'
-                  ? 'bg-threat-500/15 border-threat-500/40 text-threat-400'
-                  : threatState === 'detected'
-                  ? 'bg-amber2-500/15 border-amber2-500/40 text-amber2-400'
-                  : threatState === 'monitoring'
-                  ? 'bg-moss-500/10 border-moss-500/30 text-moss-300'
-                  : 'bg-moss-500/15 border-moss-500/40 text-moss-300'
-              )}
-            >
-              <span
-                className={cn(
-                  'h-1.5 w-1.5 rounded-full',
-                  threatState === 'alert'
-                    ? 'bg-threat-500 animate-blink'
-                    : threatState === 'detected'
-                    ? 'bg-amber2-500 animate-blink'
-                    : 'bg-moss-400'
-                )}
-              />
-              <span className="uppercase">{threatState}</span>
-            </div>
-
-            <button
-              data-testid="alerts-bell"
-              onClick={() => nav('/alerts')}
-              className="relative h-10 w-10 grid place-items-center rounded-xl glass hover:bg-white/5 transition"
-            >
-              <Bell size={17} />
-              {activeCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] grid place-items-center px-1 rounded-full bg-threat-500 text-white font-mono text-[10px] font-semibold">
-                  {activeCount}
-                </span>
-              )}
-            </button>
-
-            <div className="hidden sm:flex items-center gap-3 pl-2">
-              <div className="text-right hidden md:block">
-                <div className="text-sm font-medium leading-tight">{user?.name || 'Ranger'}</div>
-                <div className="font-mono text-[10px] text-white/40 uppercase tracking-wider">
-                  {user?.role}
-                </div>
-              </div>
-              <div className="h-9 w-9 rounded-full bg-gradient-to-br from-moss-500 to-moss-700 grid place-items-center font-semibold">
-                {(user?.name || 'R')[0]}
-              </div>
-            </div>
-
-            <button
-              data-testid="logout-btn"
-              onClick={onLogout}
-              className="h-10 w-10 grid place-items-center rounded-xl glass hover:bg-threat-500/10 hover:text-threat-400 transition"
-              title="Logout"
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
+          {/* Logout */}
+          <button
+            data-testid="logout-btn"
+            onClick={onLogout}
+            className="h-8 w-8 grid place-items-center rounded-md hover:bg-threat-500/10 hover:text-threat-400 transition text-white/30"
+            title="Logout"
+          >
+            <LogOut size={14} />
+          </button>
         </div>
       </header>
 
@@ -147,27 +149,27 @@ export default function Header() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+            className="lg:hidden fixed inset-0 z-40 bg-black/70 backdrop-blur-sm"
             onClick={() => setMobileOpen(false)}
           >
             <motion.aside
-              initial={{ x: -280 }}
+              initial={{ x: -260 }}
               animate={{ x: 0 }}
-              exit={{ x: -280 }}
-              transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-              className="absolute left-0 top-0 bottom-0 w-72 glass-strong border-r border-white/10 p-5"
+              exit={{ x: -260 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+              className="absolute left-0 top-0 bottom-0 w-64 glass-strong border-r border-white/[0.07] p-5"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-6">
-                <div className="font-display font-semibold">WildGuard AI</div>
+              <div className="flex items-center justify-between mb-5">
+                <div className="font-display text-[14px] font-semibold">{APP_NAME}</div>
                 <button
                   onClick={() => setMobileOpen(false)}
-                  className="h-8 w-8 grid place-items-center rounded-lg bg-white/5"
+                  className="h-7 w-7 grid place-items-center rounded-md bg-white/5 text-white/50"
                 >
-                  <X size={16} />
+                  <X size={14} />
                 </button>
               </div>
-              <nav className="flex flex-col gap-1">
+              <nav className="flex flex-col gap-0.5">
                 {mobileNav.map(({ to, label, Icon }) => (
                   <NavLink
                     key={to}
@@ -175,12 +177,12 @@ export default function Header() {
                     onClick={() => setMobileOpen(false)}
                     className={({ isActive }) =>
                       cn(
-                        'flex items-center gap-3 px-3 py-3 rounded-xl text-sm',
-                        isActive ? 'bg-moss-500/10 text-moss-300' : 'text-white/60 hover:bg-white/5'
+                        'flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium',
+                        isActive ? 'bg-white/[0.07] text-white' : 'text-white/50 hover:bg-white/[0.04] hover:text-white/80'
                       )
                     }
                   >
-                    <Icon size={17} />
+                    <Icon size={15} />
                     {label}
                   </NavLink>
                 ))}

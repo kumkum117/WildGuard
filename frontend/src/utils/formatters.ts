@@ -15,7 +15,10 @@ export const formatRelative = (iso: string) => {
 };
 
 export const formatGps = (lat: number, lng: number) =>
-  `${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E`;
+  Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E` : 'GPS not set';
+
+export const hasGps = (loc?: { lat: number; lng: number } | null) =>
+  !!loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng);
 
 export const padNum = (n: number, width = 2) =>
   n.toString().padStart(width, '0');

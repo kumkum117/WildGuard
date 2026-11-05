@@ -99,6 +99,10 @@ class AlertManager:
         self._db_lock = threading.Lock()
         self._init_db()
 
+        # --- track live email threads so shutdown() can join them ---
+        self._active_threads: list[threading.Thread] = []
+        self._threads_lock = threading.Lock()
+
         self._log_config()
 
     # ------------------------------------------------------------------
@@ -129,12 +133,24 @@ class AlertManager:
         ts     = timestamp or time.time()
         row_id = self._log_to_db(label, confidence, camera_id, snapshot_path, ts)
 
-        threading.Thread(
+        t = threading.Thread(
             target=self._email_worker,
             args=(row_id, label, confidence, camera_id, snapshot_path, ts),
             daemon=True,
             name=f"wg-alert-{label}",
-        ).start()
+        )
+        with self._threads_lock:
+            self._active_threads.append(t)
+        t.start()
+
+    def shutdown(self, timeout: float = 20.0) -> None:
+        """Wait up to `timeout` seconds for in-flight email threads to finish."""
+        with self._threads_lock:
+            pending = [t for t in self._active_threads if t.is_alive()]
+        if pending:
+            print(f"[AlertManager] Waiting for {len(pending)} email thread(s) to finish...")
+        for t in pending:
+            t.join(timeout=timeout)
 
     # ------------------------------------------------------------------
     # Cooldown
@@ -233,6 +249,11 @@ class AlertManager:
                 self._update_email_status(row_id, sent)
             except Exception as exc:
                 print(f"[AlertManager] DB update failed [row {row_id}]: {exc}")
+            with self._threads_lock:
+                try:
+                    self._active_threads.remove(threading.current_thread())
+                except ValueError:
+                    pass
 
     def _send_email(
         self,

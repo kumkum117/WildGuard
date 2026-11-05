@@ -1,9 +1,10 @@
-// @ts-nocheck
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Phone, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Phone, ArrowRight, ShieldCheck, MessageSquare, Terminal, WifiOff, Loader } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { isValidPhone } from '../../utils/validators';
+import { authService } from '../../services/authService';
+import type { AuthConfig } from '../../services/backend';
 
 interface Props {
   onSent: () => void;
@@ -14,6 +15,16 @@ export default function LoginScreen({ onSent }: Props) {
   const [phone, setPhone] = useState('+91 ');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // undefined = still checking, null = backend unreachable
+  const [config, setConfig] = useState<AuthConfig | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    authService.config().then((c) => !cancelled && setConfig(c));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,8 +37,8 @@ export default function LoginScreen({ onSent }: Props) {
     try {
       await sendOtp(phone);
       onSent();
-    } catch {
-      setError('Could not send OTP');
+    } catch (err) {
+      setError((err as Error).message || 'Could not send OTP');
     } finally {
       setLoading(false);
     }
@@ -57,14 +68,20 @@ export default function LoginScreen({ onSent }: Props) {
             <input
               data-testid="phone-input"
               type="tel"
+              autoComplete="tel"
               autoFocus
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                setError(null);
+              }}
               placeholder="+91 98765 43210"
               className="bg-transparent outline-none text-base font-mono tracking-wide w-full placeholder-white/25"
             />
           </div>
         </label>
+
+        <DeliveryHint config={config} />
 
         {error && (
           <motion.div
@@ -72,6 +89,7 @@ export default function LoginScreen({ onSent }: Props) {
             animate={{ opacity: 1, y: 0 }}
             className="text-sm text-threat-400"
             data-testid="login-error"
+            role="alert"
           >
             {error}
           </motion.div>
@@ -86,8 +104,15 @@ export default function LoginScreen({ onSent }: Props) {
           className="group relative w-full mt-2 px-5 py-3.5 rounded-xl bg-gradient-to-b from-moss-400 to-moss-600 text-forest-900 font-semibold tracking-tight shadow-glow-safe disabled:opacity-60 transition"
         >
           <span className="inline-flex items-center justify-center gap-2">
-            {loading ? 'Sending OTP…' : 'Continue'}
-            {!loading && <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />}
+            {loading ? (
+              <>
+                <Loader size={16} className="animate-spin" /> Sending code…
+              </>
+            ) : (
+              <>
+                Continue <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+              </>
+            )}
           </span>
         </motion.button>
 
@@ -95,6 +120,46 @@ export default function LoginScreen({ onSent }: Props) {
           By continuing, you accept the ranger code of conduct
         </div>
       </form>
+    </div>
+  );
+}
+
+function DeliveryHint({ config }: { config: AuthConfig | null | undefined }) {
+  const base = 'flex items-start gap-2 text-[12px] leading-snug';
+  if (config === undefined) {
+    return (
+      <div className={`${base} text-white/35`}>
+        <Loader size={13} className="mt-0.5 animate-spin shrink-0" /> Checking sign-in service…
+      </div>
+    );
+  }
+  if (config === null) {
+    return (
+      <div className={`${base} text-amber2-300/80`}>
+        <WifiOff size={13} className="mt-0.5 shrink-0" />
+        Detection server offline — you'll enter demo mode (any 6-digit code works).
+      </div>
+    );
+  }
+  if (config.delivery === 'sms') {
+    return (
+      <div className={`${base} text-moss-300/80`} data-testid="delivery-hint">
+        <MessageSquare size={13} className="mt-0.5 shrink-0" />
+        <span>
+          The code is sent by SMS to this number via {config.provider}.
+          {config.registered_numbers_only && ' Only registered numbers can sign in.'}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className={`${base} text-white/45`} data-testid="delivery-hint">
+      <Terminal size={13} className="mt-0.5 shrink-0" />
+      <span>
+        No SMS gateway is set up yet, so the code appears in the backend window
+        {config.demo_code_enabled && ' (demo code 123456 also works)'}. Add SMS_PROVIDER to .env to text it to
+        your phone.
+      </span>
     </div>
   );
 }
