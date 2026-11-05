@@ -71,7 +71,11 @@ class SettingsStore:
 
     def _save(self) -> None:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        payload = {"settings": self._settings, "cameras": self._cameras or []}
+        payload: dict = {"settings": self._settings}
+        # Leave the camera list out until it has been edited, so changing a
+        # setting never replaces the demo fleet with an empty list.
+        if self._cameras is not None:
+            payload["cameras"] = self._cameras
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         tmp.replace(self.path)
