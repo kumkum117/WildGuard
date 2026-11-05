@@ -3,6 +3,7 @@ import { Bell, MessageSquare, Phone } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../../utils/cn';
 import { useServerSettings } from '../../hooks/useServerSettings';
+import { useConnectionStore } from '../../store/connectionStore';
 import { useNotificationStore, type NotifyThreshold } from '../../store/notificationStore';
 
 const THRESHOLDS: { id: NotifyThreshold; label: string; hint: string }[] = [
@@ -26,6 +27,14 @@ export default function NotificationSettings() {
     }
     update({ notifications: next });
   };
+  const sms = useConnectionStore((st) => st.health?.sms);
+  const smsDesc = !live
+    ? 'Plain SMS to registered phones'
+    : !sms?.can_send_text
+    ? 'Needs an SMS gateway — set SMS_PROVIDER in .env (sign-in codes use it too)'
+    : sms.rangers
+    ? `High-risk alerts texted to ${sms.rangers} ranger number${sms.rangers === 1 ? '' : 's'} via ${sms.provider}`
+    : 'Add ranger numbers to ALERT_SMS_TO in .env';
   const setSensitivity = (v: number) => (live ? update({ sensitivity: v }, 400) : setLocalSensitivity(v));
 
   return (
@@ -48,7 +57,7 @@ export default function NotificationSettings() {
         <PrefRow
           icon={<MessageSquare size={14} />}
           label="SMS alerts"
-          desc="Plain SMS to registered phones"
+          desc={smsDesc}
           checked={prefs.sms}
           onToggle={() => setPrefs((p) => ({ ...p, sms: !p.sms }))}
         />

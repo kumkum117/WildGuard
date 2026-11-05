@@ -64,6 +64,9 @@ export interface Alert {
   imageUrl?: string;
   backendId?: number;
   emailSent?: boolean;
+  /** Times this incident's animal was seen (live incidents). */
+  sightings?: number;
+  lastSeen?: string;
 }
 
 export interface ActivityEvent {
@@ -136,6 +139,7 @@ export interface BackendHealth {
     cooldown_seconds: number;
   };
   settings: ServerSettings;
+  sms?: { provider: string; delivery: 'sms' | 'console'; can_send_text: boolean; rangers: number; villagers: number };
 }
 
 export interface SpeciesScore {
@@ -211,4 +215,121 @@ export interface VideoSource {
   name: string;
   group: string;
   size_mb: number;
+}
+
+// ---------------------------------------------------------------------------
+// Deterrence (server-owned state, see backend/deterrence.py)
+// ---------------------------------------------------------------------------
+
+export type SirenPattern = 'wail' | 'yelp' | 'hilo' | 'pulse' | 'bee';
+export type LightMode = 'strobe' | 'flood';
+
+export interface DeterrenceTrigger {
+  species: string;
+  label: string;
+  level: string;
+  camera_id: string;
+  camera: string;
+  confidence: number;
+  at: number;
+}
+
+export interface DeterrenceSuggestion {
+  type: 'deter' | 'broadcast';
+  species?: string;
+  label?: string;
+  level?: string;
+  camera_id?: string;
+  camera?: string;
+  confidence?: number;
+  recommended?: { lights: LightMode | null; sound: SirenPattern | null };
+  broadcast?: string;
+  message?: string;
+  note?: string;
+  expires_at: number;
+}
+
+export interface DeterrenceServer {
+  mode: 'auto' | 'manual';
+  manual_until: number | null;
+  siren: boolean;
+  lights: boolean;
+  sound: boolean;
+  pattern: SirenPattern;
+  light_mode: LightMode;
+  zones: string[];
+  engaged: boolean;
+  source: 'auto' | 'operator' | null;
+  engagement_started_at: number | null;
+  activated_at?: number | null;
+  disarm_at: number | null;
+  window_s: number;
+  max_engagement_s: number;
+  stage: number | null;
+  step: number | null;
+  steps_total: number;
+  next_step_at: number | null;
+  profile: { species: string | null; note: string } | null;
+  last_trigger: DeterrenceTrigger | null;
+  last_seen_at: number | null;
+  suggestion: DeterrenceSuggestion | null;
+  episode_id: string | null;
+  hardware: { configured: boolean; ok: boolean | null; last_at: number | null; latency_ms: number | null; error: string | null };
+  server_time: number;
+  stages: string[];
+}
+
+export interface DeterrenceEpisode {
+  id: string;
+  started_at: number;
+  ended_at: number | null;
+  source: 'auto' | 'operator' | 'test';
+  actor: string;
+  trigger: DeterrenceTrigger | null;
+  max_stage: number;
+  patterns: string[];
+  extensions: number;
+  ended_by: string | null;
+  duration_s: number | null;
+  outcome: 'active' | 'repelled' | 'returned' | 'stopped' | 'persisted' | 'completed' | string;
+  returned_after_s: number | null;
+  stopped_by?: string;
+}
+
+export interface DeterrenceStep {
+  stage: number;
+  lights: LightMode | null;
+  sound: SirenPattern | null;
+  village: string | null;
+  ranger: boolean;
+}
+
+export interface DeterrenceProfile {
+  species: string;
+  note: string;
+  ignore: boolean;
+  notify_only: boolean;
+  steps: DeterrenceStep[];
+}
+
+export interface BroadcastRecord {
+  id: string;
+  type: string;
+  title: string;
+  level: 'danger' | 'warning' | 'success' | 'info';
+  message: string;
+  timestamp: number;
+  actor: string;
+  channels: Record<string, string>;
+  recipients: number;
+}
+
+export interface BroadcastInfo {
+  templates: Record<string, { title: string; level: 'danger' | 'warning' | 'success'; message: string }>;
+  channels: {
+    dashboard: { available: boolean };
+    loudspeaker: { available: boolean; reason?: string | null };
+    sms: { available: boolean; recipients: number; reason?: string | null; provider?: string };
+  };
+  history: BroadcastRecord[];
 }

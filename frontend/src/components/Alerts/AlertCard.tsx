@@ -1,5 +1,6 @@
 // @ts-nocheck
 import type { Alert } from '../../types';
+import type { AlertGroup } from '../../utils/alertGroups';
 import { cn } from '../../utils/cn';
 import GlowingBadge from '../Common/GlowingBadge';
 import { formatRelative, formatGps } from '../../utils/formatters';
@@ -8,20 +9,26 @@ import { motion } from 'framer-motion';
 
 interface Props {
   alert: Alert;
+  /** Incident this alert represents (repeat alerts merged into one card). */
+  group?: AlertGroup;
   onOpen: () => void;
   onAcknowledge: () => void;
   onResolve: () => void;
 }
 
-export default function AlertCard({ alert, onOpen, onAcknowledge, onResolve }: Props) {
+export default function AlertCard({ alert, group, onOpen, onAcknowledge, onResolve }: Props) {
   const isHigh = alert.threatLevel === 'high';
+  const status = group?.status ?? alert.status;
+  const repeats = group ? group.alerts.length : 1;
+  const sightings = group ? group.sightings : alert.sightings ?? 1;
+  const lastSeen = group ? new Date(group.lastAt).toISOString() : alert.lastSeen ?? alert.timestamp;
   return (
     <motion.div
       whileHover={{ y: -3 }}
       transition={{ duration: 0.2 }}
       className={cn(
         'glass rounded-2xl overflow-hidden border transition-colors',
-        isHigh && alert.status === 'active'
+        isHigh && status === 'active'
           ? 'border-threat-500/40 shadow-glow-threat'
           : 'border-white/8 hover:border-white/20'
       )}
@@ -44,14 +51,14 @@ export default function AlertCard({ alert, onOpen, onAcknowledge, onResolve }: P
             <span
               className={cn(
                 'pill border text-[10px] uppercase tracking-wider',
-                alert.status === 'active'
+                status === 'active'
                   ? 'bg-threat-500/10 border-threat-500/30 text-threat-300'
-                  : alert.status === 'acknowledged'
+                  : status === 'acknowledged'
                   ? 'bg-amber2-500/10 border-amber2-500/30 text-amber2-300'
                   : 'bg-moss-500/10 border-moss-500/30 text-moss-300'
               )}
             >
-              {alert.status}
+              {status}
             </span>
           </div>
 
@@ -63,8 +70,21 @@ export default function AlertCard({ alert, onOpen, onAcknowledge, onResolve }: P
               <MapPin size={11} /> {alert.location.name}
             </div>
             <div>{formatGps(alert.location.lat, alert.location.lng)}</div>
-            <div>{formatRelative(alert.timestamp)} · {alert.confidence}%</div>
+            <div>{formatRelative(lastSeen)} · {alert.confidence}%</div>
           </div>
+
+          {(repeats > 1 || sightings > 1) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {repeats > 1 && (
+                <span className="pill bg-white/5 border border-white/10 text-white/65 text-[10px]">×{repeats} alerts grouped</span>
+              )}
+              {sightings > 1 && (
+                <span className="pill bg-white/5 border border-white/10 text-white/65 text-[10px]">
+                  seen {sightings}× · last {formatRelative(lastSeen)}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 flex items-center gap-2">
             <button
@@ -74,7 +94,7 @@ export default function AlertCard({ alert, onOpen, onAcknowledge, onResolve }: P
             >
               View
             </button>
-            {alert.status === 'active' && (
+            {status === 'active' && (
               <button
                 onClick={onAcknowledge}
                 className="text-xs px-3 py-1.5 rounded-lg bg-amber2-500/15 hover:bg-amber2-500/25 border border-amber2-500/30 text-amber2-300 inline-flex items-center gap-1.5 transition"
@@ -83,7 +103,7 @@ export default function AlertCard({ alert, onOpen, onAcknowledge, onResolve }: P
                 <Check size={12} /> Acknowledge
               </button>
             )}
-            {alert.status !== 'resolved' && (
+            {status !== 'resolved' && (
               <button
                 onClick={onResolve}
                 className="text-xs px-3 py-1.5 rounded-lg bg-moss-500/15 hover:bg-moss-500/25 border border-moss-500/30 text-moss-300 inline-flex items-center gap-1.5 transition"

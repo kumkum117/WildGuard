@@ -2,6 +2,9 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Radar, ShieldAlert, Siren, Settings, Leaf, Activity, ScanSearch, Server } from 'lucide-react';
 import { useConnectionStore } from '../../store/connectionStore';
+import { useDeterrenceStore } from '../../store/deterrenceStore';
+import { openGroupCount } from '../../utils/alertGroups';
+import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '../../utils/cn';
 import { APP_NAME } from '../../utils/constants';
@@ -26,8 +29,11 @@ export default function Sidebar() {
   const alerts = useAlertStore((s) => s.alerts);
   const threatState = useDetectionStore((s) => s.threatState);
   const online = cameras.filter((c) => c.status === 'online').length;
-  const activeAlerts = alerts.filter((a) => a.status === 'active').length;
+  // Open incidents, not raw rows: repeat alerts for one animal count once.
+  const activeAlerts = useMemo(() => openGroupCount(alerts), [alerts]);
   const mode = useConnectionStore((s) => s.mode);
+  const deterring = useDeterrenceStore((s) => s.server.engaged);
+  const sirenOn = useDeterrenceStore((s) => s.server.siren);
   const linkUp = useConnectionStore((s) => s.online);
   const backendLabel = mode === 'live' ? (linkUp ? 'live' : 'offline') : mode === 'demo' ? 'demo' : '…';
 
@@ -77,6 +83,12 @@ export default function Sidebar() {
               )}
               <Icon size={15} className={active ? 'text-moss-400' : ''} />
               <span>{label}</span>
+              {to === '/deterrence' && deterring && (
+                <span className="ml-auto relative flex h-2 w-2">
+                  <span className={cn('absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping', sirenOn ? 'bg-threat-500' : 'bg-amber2-500')} />
+                  <span className={cn('relative inline-flex h-2 w-2 rounded-full', sirenOn ? 'bg-threat-500' : 'bg-amber2-500')} />
+                </span>
+              )}
               {to === '/alerts' && activeAlerts > 0 && (
                 <span className="ml-auto font-mono text-[10px] px-1.5 py-0.5 rounded-md bg-threat-500/20 text-threat-400 border border-threat-500/25">
                   {activeAlerts > 99 ? '99+' : activeAlerts}

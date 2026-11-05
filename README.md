@@ -13,8 +13,31 @@ start.bat prod     :: build the dashboard once, serve everything → http://loca
 ```
 
 The first start installs missing dependencies and loads the AI models (~30 s).
-Sign in with any phone number and the code **123456**. The real one-time code is
-also printed in the backend window.
+Sign in with your phone number. Until an SMS provider is set up (below), the
+one-time code is printed in the backend window and the demo code **123456** also works.
+
+### Real SMS sign-in codes
+
+Pick one provider, put its keys in `.env` (see `.env.example`), and restart the backend.
+The code is then texted to whatever number is entered on the login screen, and the
+demo code stops working.
+
+| `SMS_PROVIDER` | Cost | Setup | Can also send alerts/broadcasts |
+|---|---|---|---|
+| `textbee` | Free (50 SMS/day) | Install the TextBee app on an Android phone with a SIM, sign up at textbee.dev, copy the API key → `TEXTBEE_API_KEY` | Yes |
+| `smsgate` | Free | Install "SMS Gateway for Android" (sms-gate.app), enable Cloud server, copy username/password → `SMSGATE_USERNAME`/`SMSGATE_PASSWORD` | Yes |
+| `twilio_verify` | Trial credit, then paid | Twilio account → Verify service → `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. Trial accounts only text numbers verified in the console | No (codes only) |
+| `twilio` | Paid per SMS | Twilio number → `TWILIO_FROM_NUMBER` plus SID/token | Yes |
+| `fast2sms` | Paid (India) | Recharge, copy API key → `FAST2SMS_API_KEY`. Fixed "Your OTP: …" message, +91 only | No (codes only) |
+
+For a student demo, **TextBee** is the easiest: no business registration, and the SMS
+comes from your own phone's number. Indian commercial bulk SMS normally requires DLT
+registration, which the phone-based gateways avoid for small personal volumes.
+
+With a provider that can send free text, `ALERT_SMS_TO` (ranger numbers) receives a
+text for every new high-risk alert and escalation, and `VILLAGER_SMS_TO` receives the
+village broadcasts sent from the Deterrence page. `WILDGUARD_USERS` restricts sign-in to
+registered numbers.
 
 ### Manual start (any OS)
 
@@ -43,8 +66,9 @@ header shows `LIVE`, `DEMO` or `RECONNECTING`.
 | **Detection** | YOLO-World finds animals; CLIP verifies the species on a crop of each box; a tracker confirms an animal after 3 inference frames and votes on its species across frames. 29 species, from tiger, leopard, elephant and gaur to livestock. |
 | **Night vision** | Each frame is classed as day / low-light / infrared. Dark frames are denoised, brightened and contrast-equalised before detection; species are named from the original pixels. The dashboard can show the enhanced "night view". |
 | **Media analysis** | Upload photos or videos. Images return in seconds with annotated, night-view and original versions. Videos run as background jobs with a live preview, an annotated MP4, a sightings timeline (click to seek) and keyframes. Any uploaded video can become a camera feed. |
-| **Alerts** | High-risk animals go through the existing `AlertManager`: confidence threshold, per-camera cooldown, SQLite log and e-mail with snapshot. Acknowledge and resolve from the dashboard. |
-| **Deterrence** | Auto mode: HIGH threat → siren + lights, MEDIUM → lights, auto-disarm after 30 s. Manual override, villager broadcasts, optional hardware webhook. |
+| **Alerts** | High-risk animals go through the existing `AlertManager`: confidence threshold, per-camera cooldown, SQLite log, e-mail (and SMS) with snapshot. An animal that stays in view updates one open alert ("seen 14×") instead of creating new ones; repeats are grouped, with bulk acknowledge/resolve. |
+| **Notifications** | Bell with a grouped notification centre (unread badge capped at 9+, ×N counters, filters, mark-all-read). Toasts merge repeats instead of stacking, at most three at once, and hovering pauses them. "Notify me about" sets the threshold. |
+| **Deterrence** | Response console run by the server. Species playbooks: elephants get flood lights, then a bee-swarm buzz, before any siren; big cats get strobe and siren; livestock is ignored. Escalation (warn → repel → alert village → rangers) happens while the animal stays, capped at 5 minutes. Manual override auto-reverts after 30 min. The siren is synthesised in the browser on every page (wail, yelp, hi-lo, pulse, bee). Also: hold-to-fire controls, zone targeting, self-test, engagement history with outcomes, and village broadcasts with editable messages and real recipients. |
 
 ## How day/night detection works
 
@@ -84,7 +108,10 @@ should be used to confirm them before deployment.
 | `WILDGUARD_MODEL` | `models/yolov8s-worldv2.pt` | Detector weights |
 | `WILDGUARD_HOST` / `WILDGUARD_PORT` | `127.0.0.1` / `5000` | Bind address |
 | `WILDGUARD_TORCH_THREADS` | half the cores, max 8 | CPU threads per inference |
-| `WILDGUARD_DEMO_OTP` | `123456` | Demo login code (empty to disable) |
+| `WILDGUARD_DEMO_OTP` | `123456` without SMS, off with SMS | Demo login code (empty to disable) |
+| `WILDGUARD_USERS` | anyone | Registered numbers allowed to sign in |
+| `WILDGUARD_REQUIRE_AUTH` | `1` | Every API call needs a signed-in session |
+| `SMS_PROVIDER` + keys | console | Real SMS (see *Real SMS sign-in codes*) |
 | `WILDGUARD_RANGER_NAME` | `Sania` | Name shown after sign-in |
 | `DETERRENCE_WEBHOOK_URL` | — | POST target for siren/light/broadcast events (relay board, ESP32…) |
 
@@ -92,10 +119,9 @@ should be used to confirm them before deployment.
 (detector threshold), night-vision mode (auto / always / off), night view on live feeds,
 AI frame rate, CLIP on/off, e-mail alerts on/off, notification preferences, camera fleet.
 
-> **E-mail:** with credentials in `.env`, every high-risk sighting sends an e-mail
-> (5-minute cooldown per animal per camera). The demo feed loops a cheetah clip, so a
-> running server e-mails every 5 minutes. Switch **E-mail alerts** off in Settings while
-> demoing.
+> **E-mail:** with credentials in `.env`, each new high-risk incident sends one e-mail.
+> While the animal stays in view the same alert is updated rather than re-sent. Switch
+> **E-mail alerts** off in Settings while demoing.
 
 ## Project structure
 
@@ -111,7 +137,7 @@ backend/
   alert_store.py       alert feed / triage on top of alert_manager.AlertManager
   deterrence.py        siren / lights state, auto-response, broadcasts
   event_bus.py         Server-Sent Events hub      settings_store.py  persisted settings
-  auth.py              one-time-passcode sign-in
+  auth.py, sms.py      one-time-passcode sign-in, sessions, SMS gateways
   app.py, pipeline.py, main.py, detector.py, alert_manager.py, video_stream.py
                        original single-camera tools and modules (unchanged, reused)
 frontend/src/
@@ -134,9 +160,11 @@ alerts/                alert snapshots (runtime)      wildguard_alerts.db   aler
 | `GET /api/alerts`, `POST /api/alerts/<id>/acknowledge` · `resolve` · `reopen`, `GET /api/alerts/<id>/snapshot` | Alerts |
 | `POST /api/analyze` (multipart `file`, `night_mode`, `raise_alerts`) | Analyse an image (sync) or video (job) |
 | `GET /api/analyses`, `GET/DELETE /api/analyses/<id>`, `POST …/cancel`, `GET …/preview`, `GET …/files/<name>` | Analysis history & files |
-| `GET/POST /api/deterrence`, `POST /api/broadcasts` | Deterrence |
+| `GET /api/deterrence`, `POST /api/deterrence/fire` · `stop` · `extend` · `mode` · `style` · `test`, `GET /api/deterrence/history` · `profiles` | Deterrence console |
+| `GET/POST /api/broadcasts` | Villager broadcasts (templates, channels, history) |
+| `POST /api/alerts/bulk` | Acknowledge / resolve many alerts |
 | `GET/PUT /api/settings` | Settings |
-| `POST /api/auth/send-otp` · `verify-otp` | Sign-in |
+| `GET /api/auth/config`, `POST /api/auth/send-otp` · `verify-otp` · `logout` | Sign-in (sets an HttpOnly session cookie) |
 | `GET /stream`, `GET /detections` | Same shape as the original `app.py` (first camera) |
 
 ## Notes
@@ -147,6 +175,8 @@ alerts/                alert snapshots (runtime)      wildguard_alerts.db   aler
 * The original tools still work on their own: `py backend/app.py --source …` (single-camera
   web view), `py backend/pipeline.py` (headless) and `py backend/main.py` (OpenCV window).
   They write to the same alert database, so their alerts also appear in the dashboard.
-* SMS / voice notifications are stored as preferences but need an SMS gateway (e.g. Twilio,
-  MSG91). Plug it in at `backend/auth.py::_deliver` and next to the e-mail sender in
-  `alert_manager.py`.
+* Voice-call alerts are stored as a preference only; no voice gateway is wired up.
+* Deterrence hardware: set `DETERRENCE_WEBHOOK_URL` and every change is POSTed as JSON:
+  `{event, siren, lights, pattern, light_mode, zones, duration_s, episode_id, source}`.
+  A relay board or ESP32 can switch the siren/lights from that. Use **Self-test** on the
+  Deterrence page to check the link.

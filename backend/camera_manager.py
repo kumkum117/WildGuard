@@ -403,8 +403,11 @@ class CameraWorker:
                     "detection", f"{pretty} detected on {self.id} — {conf:.0%}{night}",
                     {"HIGH": "danger", "MEDIUM": "warning"}.get(level, "info"),
                 )
-                # 2. Deterrence response matrix (auto mode only).
-                ctx.deterrence.on_threat(level, pretty, self.name)
+
+        # 2. Deterrence: every sighting is a keep-alive — an animal that stays
+        #    in view keeps its engagement running and escalating (the
+        #    controller throttles and applies the species playbook).
+        ctx.deterrence.on_sighting(label, level, self.id, self.name, conf)
 
         # 3. Alert. An animal that is still around continues its open incident
         #    (sightings counter on the existing alert) instead of a new alert.

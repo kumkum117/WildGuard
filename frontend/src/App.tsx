@@ -17,6 +17,8 @@ import AnalyzePage from './pages/AnalyzePage';
 import Sidebar from './components/Layout/Sidebar';
 import Header from './components/Layout/Header';
 import ToastOverlay from './components/Common/ToastOverlay';
+import DeterrenceAudio from './components/Deterrence/DeterrenceAudio';
+import DeterrenceBar from './components/Deterrence/DeterrenceBar';
 import './App.css';
 
 const RequireAuth = ({ children }: { children: React.ReactNode }) => {
@@ -29,6 +31,7 @@ const Shell = ({ children }: { children: React.ReactNode }) => (
     <Sidebar />
     <div className="flex-1 flex flex-col min-h-screen lg:ml-60">
       <Header />
+      <DeterrenceBar />
       <main className="flex-1 px-4 sm:px-6 lg:px-8 py-5">{children}</main>
     </div>
   </div>
@@ -129,6 +132,7 @@ function App() {
       </Routes>
     </AnimatePresence>
     <ToastOverlay />
+    {isAuthed && <DeterrenceAudio />}
     </>
   );
 }

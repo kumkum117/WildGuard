@@ -20,7 +20,7 @@ import { notify } from '../services/notify';
 import { useConnectionStore } from '../store/connectionStore';
 import { useAnalysisStore } from '../store/analysisStore';
 import { generateActivity, generateAlert, generateCameras, generateDetection, seedActivity, seedAlerts } from '../utils/mockData';
-import type { Analysis, Detection, ThreatState } from '../types';
+import type { Analysis, Camera, Detection, ThreatState } from '../types';
 
 const PROBE_TIMEOUT_MS = 2500;
 const DEMO_RETRY_MS = 5000;      // while in demo mode, keep checking for a backend
@@ -101,34 +101,24 @@ const notifyDetection = (d: Detection) => {
 function startLive(): () => void {
   const conn = useConnectionStore.getState();
   let closed = false;
-  let applyingRemote = false;
   let threatTimer: number | undefined;
   const cameraStatus = new Map<string, string>();
   const analysisStatus = new Map<string, string>();
   let deterrenceArmed = false;
 
   const applyDeterrence = (d: RawDeterrence) => {
-    const armed = d.siren || d.lights;
-    if (armed && !deterrenceArmed && d.last_trigger && Date.now() / 1000 - d.last_trigger.at < 10) {
+    if (d.engaged && !deterrenceArmed && d.source === 'auto' && d.last_trigger) {
       notify({
         kind: 'deterrence',
-        level: d.last_trigger.level === 'HIGH' ? 'danger' : 'warning',
-        title: d.siren ? 'Siren + lights activated' : 'Warning lights activated',
+        level: d.siren ? 'danger' : 'warning',
+        title: d.siren ? 'Siren + lights engaged' : 'Warning lights engaged',
         message: `Auto response to ${d.last_trigger.label} at ${d.last_trigger.camera}`,
-        groupKey: `deterrence:${d.last_trigger.camera}`,
+        groupKey: `deterrence:${d.last_trigger.camera_id}`,
         link: '/deterrence',
       });
     }
-    deterrenceArmed = armed;
-    applyingRemote = true;
-    useDeterrenceStore.setState({
-      siren: d.siren,
-      lights: d.lights,
-      sound: d.sound,
-      mode: d.mode,
-      activatedAt: d.activated_at ? new Date(d.activated_at * 1000).toISOString() : undefined,
-    });
-    applyingRemote = false;
+    deterrenceArmed = d.engaged;
+    useDeterrenceStore.getState().applyServer(d);
   };
 
   const resync = async () => {
@@ -147,8 +137,9 @@ function startLive(): () => void {
       useAnalysisStore.getState().setItems(b.analyses);
       b.cameras.forEach((c) => cameraStatus.set(c.id, c.status));
       b.analyses.forEach((a) => analysisStatus.set(a.id, a.status));
-      deterrenceArmed = b.deterrence.siren || b.deterrence.lights;
+      deterrenceArmed = b.deterrence.engaged;
       applyDeterrence(b.deterrence);
+      backend.deterrenceHistory().then((h) => !closed && useDeterrenceStore.getState().setEpisodes(h)).catch(() => {});
     } catch (err) {
       console.warn('[WildGuard] bootstrap failed', err);
     }
@@ -253,17 +244,8 @@ function startLive(): () => void {
     deterrence: applyDeterrence,
     settings: (s) => conn.setSettings(s),
     analysis: onAnalysis,
-  });
-
-  // Operator actions on the Deterrence page are written back to the backend.
-  const unsubscribe = useDeterrenceStore.subscribe((s, prev) => {
-    if (applyingRemote) return;
-    const patch: Partial<RawDeterrence> = {};
-    if (s.siren !== prev.siren) patch.siren = s.siren;
-    if (s.lights !== prev.lights) patch.lights = s.lights;
-    if (s.sound !== prev.sound) patch.sound = s.sound;
-    if (s.mode !== prev.mode) patch.mode = s.mode;
-    if (Object.keys(patch).length) backend.setDeterrence(patch).catch(() => {});
+    deterrence_episode: (e) => useDeterrenceStore.getState().upsertEpisode(e),
+    broadcast: (b) => useDeterrenceStore.getState().upsertBroadcast(b),
   });
 
   const poll = window.setInterval(() => {
@@ -273,7 +255,6 @@ function startLive(): () => void {
   return () => {
     closed = true;
     close();
-    unsubscribe();
     window.clearInterval(poll);
     window.clearTimeout(threatTimer);
     conn.setOnline(false);
@@ -297,7 +278,7 @@ function startDemo(): () => void {
 
   const tDetection = socket.scheduleInterval(() => {
     // Read deterrence state fresh each tick to avoid stale closure
-    const { setSiren, setLights, mode } = useDeterrenceStore.getState();
+    const { simulateSighting } = useDeterrenceStore.getState();
 
     const det = generateDetection(cams);
     addDetection(det);
@@ -315,15 +296,12 @@ function startDemo(): () => void {
       a.confidence = det.confidence;
       addAlert(a);
       notifyDetection(det);
-      if (mode === 'auto') {
-        setLights(true);
-        setSiren(true);
-      }
+      simulateSighting(demoTrigger(det, cams), 'high');
       window.setTimeout(() => setThreat('monitoring'), 6000);
     } else if (det.threatLevel === 'medium') {
       setThreat('detected');
       notifyDetection(det);
-      if (mode === 'auto') setLights(true);
+      simulateSighting(demoTrigger(det, cams), 'medium');
       window.setTimeout(() => setThreat('monitoring'), 4500);
     } else {
       setThreat('monitoring');
@@ -338,5 +316,19 @@ function startDemo(): () => void {
     window.clearInterval(tDetection);
     window.clearInterval(tActivity);
     socket.disconnect();
+    useDeterrenceStore.getState().reset();
   };
 }
+
+const demoTrigger = (det: Detection, cams: Camera[]) => {
+  const cam = cams.find((c) => c.id === det.cameraId);
+  return {
+    species: det.species.toLowerCase(),
+    label: det.species,
+    level: det.threatLevel.toUpperCase(),
+    camera_id: det.cameraId,
+    camera: cam?.location.name ?? det.cameraId,
+    confidence: det.confidence / 100,
+    at: Date.now() / 1000,
+  };
+};

@@ -7,6 +7,7 @@ import { useDetectionStore } from '../../store/detectionStore';
 import { formatTime, formatGps } from '../../utils/formatters';
 import { cn } from '../../utils/cn';
 import LiveFeed from '../Common/LiveFeed';
+import { useDeterrenceStore } from '../../store/deterrenceStore';
 
 const RECENT_MS = 2 * 60 * 1000;
 
@@ -14,6 +15,7 @@ export default function LiveCameraPanel() {
   const cameras = useDetectionStore((s) => s.cameras);
   const detections = useDetectionStore((s) => s.detections);
   const threatState = useDetectionStore((s) => s.threatState);
+  const deterrence = useDeterrenceStore((s) => s.server);
   const [activeCamId, setActiveCamId] = useState<string | null>(null);
   const [now, setNow] = useState(new Date());
   const nav = useNavigate();
@@ -201,16 +203,27 @@ export default function LiveCameraPanel() {
               )}
             </div>
           </div>
-          {isThreat && (
+          {(deterrence.engaged || isThreat) && (
             <motion.div
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
-              className="px-3 py-2 rounded-xl bg-threat-500/15 border border-threat-500/40 shadow-glow-threat"
+              className={cn(
+                'px-3 py-2 rounded-xl border',
+                deterrence.siren || (isThreat && !deterrence.engaged)
+                  ? 'bg-threat-500/15 border-threat-500/40 shadow-glow-threat'
+                  : 'bg-amber2-500/15 border-amber2-500/40'
+              )}
             >
               <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-threat-300">
-                Threat detected
+                {deterrence.engaged ? `Deterrence · ${deterrence.last_trigger?.label ?? 'operator'}` : 'Threat detected'}
               </div>
-              <div className="text-sm font-medium text-threat-200">Auto-deterrence armed</div>
+              <div className="text-sm font-medium text-threat-200">
+                {deterrence.engaged
+                  ? [deterrence.siren && 'Siren', deterrence.lights && `${deterrence.light_mode} lights`].filter(Boolean).join(' + ')
+                  : deterrence.mode === 'manual'
+                  ? 'Manual mode — no auto response'
+                  : 'Auto-deterrence armed'}
+              </div>
             </motion.div>
           )}
         </div>

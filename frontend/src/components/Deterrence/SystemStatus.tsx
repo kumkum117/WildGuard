@@ -1,115 +1,107 @@
-// @ts-nocheck
-import { motion } from 'framer-motion';
+import { Cpu, Radio, Volume2, Moon, Camera as CameraIcon, Hand } from 'lucide-react';
 import { useDeterrenceStore } from '../../store/deterrenceStore';
 import { useDetectionStore } from '../../store/detectionStore';
-import { Cpu, Radio, Wifi, Battery, ScanEye, Moon } from 'lucide-react';
-import { cn } from '../../utils/cn';
 import { useConnectionStore } from '../../store/connectionStore';
+import { mmss, useAudioState, useNow } from '../../hooks/useNow';
+import { sirenEngine } from '../../utils/sirenEngine';
+import { cn } from '../../utils/cn';
 
+// Readiness: is everything needed for deterrence actually working right now?
 export default function SystemStatus() {
-  const { siren, lights, sound, mode } = useDeterrenceStore();
-  const threatState = useDetectionStore((s) => s.threatState);
+  const server = useDeterrenceStore((s) => s.server);
+  const offset = useDeterrenceStore((s) => s.clockOffset);
+  const playHere = useDeterrenceStore((s) => s.playHere);
   const cameras = useDetectionStore((s) => s.cameras);
   const live = useConnectionStore((s) => s.mode === 'live');
   const health = useConnectionStore((s) => s.health);
   const settings = useConnectionStore((s) => s.settings);
-  const nightCams = cameras.filter((c) => c.lighting?.is_night).length;
+  const audio = useAudioState();
+  const now = useNow(1000, server.mode === 'manual');
+  const online = cameras.filter((c) => c.status === 'online').length;
+  const hw = server.hardware;
+  const manualLeft = server.manual_until ? server.manual_until - (now + offset) / 1000 : 0;
 
-  const armed = siren || lights;
+  const tiles = [
+    {
+      icon: <Hand size={13} />,
+      label: 'Mode',
+      value: server.mode === 'auto' ? 'Automatic' : 'Manual override',
+      hint: server.mode === 'manual' ? `auto in ${mmss(manualLeft)}` : 'playbook armed',
+      tone: server.mode === 'auto' ? 'ok' : 'warn',
+    },
+    {
+      icon: <Radio size={13} />,
+      label: 'Relay / PA',
+      value: !hw.configured ? 'Browser only' : hw.ok === false ? 'Failing' : hw.ok ? 'Connected' : 'Configured',
+      hint: !hw.configured ? 'set DETERRENCE_WEBHOOK_URL' : hw.ok === false ? hw.error ?? 'no response' : hw.latency_ms ? `${hw.latency_ms} ms` : 'not tested yet',
+      tone: !hw.configured ? 'mute' : hw.ok === false ? 'bad' : 'ok',
+    },
+    {
+      icon: <Volume2 size={13} />,
+      label: 'Audio here',
+      value: !playHere ? 'Muted' : audio === 'locked' ? 'Blocked' : audio === 'playing' ? 'Playing' : 'Ready',
+      hint: !playHere ? 'this device only' : audio === 'locked' ? 'click to enable' : 'siren plays in browser',
+      tone: !playHere ? 'mute' : audio === 'locked' ? 'warn' : 'ok',
+      onClick: audio === 'locked' ? () => sirenEngine.unlock() : undefined,
+    },
+    {
+      icon: <CameraIcon size={13} />,
+      label: 'Cameras',
+      value: `${online} / ${cameras.length} online`,
+      hint: online ? 'watching for sightings' : 'no live feeds',
+      tone: online ? 'ok' : 'bad',
+    },
+    {
+      icon: <Moon size={13} />,
+      label: 'Night vision',
+      value: live ? (settings?.night_mode ?? 'auto').toUpperCase() : 'AUTO',
+      hint: `${cameras.filter((c) => c.lighting?.is_night).length} feed(s) in night mode`,
+      tone: 'ok',
+    },
+    {
+      icon: <Cpu size={13} />,
+      label: 'AI engine',
+      value: live && health ? health.engine.model_type.split(' (')[0] : 'Simulated',
+      hint: live && health ? `${health.engine.device.toUpperCase()} · ${Math.round(health.engine.avg_inference_ms)} ms` : 'demo mode',
+      tone: live ? 'ok' : 'warn',
+    },
+  ] as const;
+
   return (
-    <div data-testid="system-status" className="glass rounded-3xl p-5 sm:p-6 border border-white/8">
-      <div className="flex items-center justify-between mb-5">
+    <section data-testid="system-status" className="glass rounded-3xl p-5 sm:p-6 border border-white/8">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/45">
-            Telemetry
-          </div>
-          <div className="font-display text-lg font-semibold tracking-tight mt-1">
-            System status
-          </div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/45">Readiness</div>
+          <div className="font-display text-lg font-semibold tracking-tight mt-1">System status</div>
         </div>
-        <div
-          className={cn(
-            'pill border',
-            armed
-              ? 'bg-threat-500/12 border-threat-500/35 text-threat-300'
-              : 'bg-moss-500/10 border-moss-500/30 text-moss-300'
-          )}
-        >
-          <motion.span
-            animate={{ opacity: [1, 0.4, 1] }}
-            transition={{ duration: 1.2, repeat: Infinity }}
-            className={cn('h-1.5 w-1.5 rounded-full', armed ? 'bg-threat-500' : 'bg-moss-400')}
-          />
-          {armed ? 'DETERRENCE ARMED' : 'Standby'}
-        </div>
+        {!live && (
+          <span className="pill bg-amber2-500/10 border border-amber2-500/30 text-amber2-300 text-[10px] uppercase tracking-wider">
+            Simulated
+          </span>
+        )}
       </div>
-
-      {live && health ? (
-        <div className="grid grid-cols-2 gap-3">
-          <StatusTile
-            icon={<Cpu size={13} />}
-            label="AI engine"
-            value={health.engine.model_type.split(' (')[0]}
-            hint={`${health.engine.device.toUpperCase()} · ${Math.round(health.engine.avg_inference_ms)} ms`}
-          />
-          <StatusTile
-            icon={<ScanEye size={13} />}
-            label="Species check"
-            value={health.engine.classifier_enabled ? 'CLIP verified' : 'detector only'}
-            hint={`${health.engine.species.length} species`}
-          />
-          <StatusTile
-            icon={<Moon size={13} />}
-            label="Night vision"
-            value={(settings?.night_mode ?? 'auto').toUpperCase()}
-            hint={nightCams ? `${nightCams} feed${nightCams > 1 ? 's' : ''} in night mode` : 'all feeds daylight'}
-          />
-          <StatusTile
-            icon={<Wifi size={13} />}
-            label="Cameras"
-            value={`${health.cameras.online} / ${health.cameras.total} online`}
-            hint={`${health.engine.inference_count.toLocaleString()} frames analysed`}
-          />
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-3">
-          <StatusTile icon={<Cpu size={13} />} label="AI compute" value="6.2 TOPS" hint="Edge unit" />
-          <StatusTile icon={<Radio size={13} />} label="LoRa mesh" value="strong" hint="12 nodes" />
-          <StatusTile icon={<Wifi size={13} />} label="Uplink" value="4G · 78%" hint="Tower A" />
-          <StatusTile icon={<Battery size={13} />} label="Power" value="grid + solar" hint="6.4 kWh" />
-        </div>
-      )}
-
-      <div className="mt-5 grid grid-cols-3 gap-2 text-center">
-        <Pill label="Mode" value={mode.toUpperCase()} tone="moss" />
-        <Pill label="Threat" value={threatState.toUpperCase()} tone={threatState === 'alert' ? 'threat' : 'moss'} />
-        <Pill label="Sound" value={sound ? 'ON' : 'OFF'} tone={sound ? 'moss' : 'mute'} />
+      <div className="grid grid-cols-2 gap-2">
+        {tiles.map((t) => (
+          <button
+            key={t.label}
+            type="button"
+            onClick={'onClick' in t ? t.onClick : undefined}
+            className={cn('text-left rounded-xl p-3 border bg-white/[0.02]', 'onClick' in t && t.onClick ? 'cursor-pointer hover:bg-white/5' : 'cursor-default', 'border-white/5')}
+          >
+            <div className="font-mono text-[10px] uppercase tracking-wider text-white/40 inline-flex items-center gap-1.5">
+              <span
+                className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  t.tone === 'ok' ? 'bg-moss-400' : t.tone === 'warn' ? 'bg-amber2-500' : t.tone === 'bad' ? 'bg-threat-500' : 'bg-white/30'
+                )}
+              />
+              {t.icon} {t.label}
+            </div>
+            <div className="mt-1 text-sm font-medium tracking-tight truncate">{t.value}</div>
+            <div className="text-[10px] text-white/35 font-mono truncate">{t.hint}</div>
+          </button>
+        ))}
       </div>
-    </div>
+    </section>
   );
 }
-
-const StatusTile = ({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint: string }) => (
-  <div className="glass rounded-xl p-3 border border-white/5">
-    <div className="font-mono text-[10px] uppercase tracking-wider text-white/40 inline-flex items-center gap-1.5">
-      {icon} {label}
-    </div>
-    <div className="mt-1 text-sm font-medium tracking-tight">{value}</div>
-    <div className="text-[10px] text-white/35 font-mono">{hint}</div>
-  </div>
-);
-
-const Pill = ({ label, value, tone }: { label: string; value: string; tone: 'moss' | 'threat' | 'mute' }) => {
-  const styles =
-    tone === 'threat'
-      ? 'bg-threat-500/12 border-threat-500/35 text-threat-300'
-      : tone === 'mute'
-      ? 'bg-white/3 border-white/8 text-white/45'
-      : 'bg-moss-500/10 border-moss-500/30 text-moss-300';
-  return (
-    <div className={`rounded-lg border px-2 py-2 ${styles}`}>
-      <div className="font-mono text-[9px] uppercase tracking-wider opacity-80">{label}</div>
-      <div className="font-mono text-xs mt-0.5">{value}</div>
-    </div>
-  );
-};

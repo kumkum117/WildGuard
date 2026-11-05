@@ -8,6 +8,11 @@ import type {
   Alert,
   Analysis,
   BackendHealth,
+  BroadcastInfo,
+  BroadcastRecord,
+  DeterrenceEpisode,
+  DeterrenceProfile,
+  DeterrenceServer,
   Camera,
   Detection,
   Lighting,
@@ -65,6 +70,8 @@ export interface RawAlert {
   status: 'active' | 'acknowledged' | 'resolved';
   email_sent: boolean;
   snapshot_url: string | null;
+  sightings?: number;
+  last_seen?: number;
 }
 
 export interface RawActivity {
@@ -75,14 +82,7 @@ export interface RawActivity {
   timestamp: number;
 }
 
-export interface RawDeterrence {
-  siren: boolean;
-  lights: boolean;
-  sound: boolean;
-  mode: 'auto' | 'manual';
-  activated_at: number | null;
-  last_trigger?: { level: string; label: string; camera: string; at: number } | null;
-}
+export type RawDeterrence = DeterrenceServer;
 
 export interface AuthConfig {
   delivery: 'sms' | 'console';
@@ -194,6 +194,8 @@ export function mapAlert(a: RawAlert): Alert {
     message: `${animal} detected near ${location.name}`,
     imageUrl: a.snapshot_url ? mediaUrl(a.snapshot_url) : NO_SNAPSHOT,
     emailSent: a.email_sent,
+    sightings: a.sightings ?? 1,
+    lastSeen: iso(a.last_seen ?? a.timestamp)!,
   };
 }
 
@@ -241,8 +243,23 @@ export const backend = {
     apiFetch<{ updated: number; status: string }>('/api/alerts/bulk', json('POST', { action, ids })),
 
   // Deterrence
-  setDeterrence: (patch: Partial<RawDeterrence>) => apiFetch<RawDeterrence>('/api/deterrence', json('POST', patch)),
-  broadcast: (type: string) => apiFetch<unknown>('/api/broadcasts', json('POST', { type })),
+  deterrence: () => apiFetch<DeterrenceServer>('/api/deterrence'),
+  fire: (body: { siren?: boolean; lights?: boolean; pattern?: string; light_mode?: string; zones?: string[] }) =>
+    apiFetch<DeterrenceServer>('/api/deterrence/fire', json('POST', body)),
+  stopDeterrence: () => apiFetch<DeterrenceServer>('/api/deterrence/stop', json('POST')),
+  extendDeterrence: (seconds = 30) => apiFetch<DeterrenceServer>('/api/deterrence/extend', json('POST', { seconds })),
+  setDeterrenceMode: (mode: 'auto' | 'manual', extend = false) =>
+    apiFetch<DeterrenceServer>('/api/deterrence/mode', json('POST', { mode, extend })),
+  setDeterrenceStyle: (body: { pattern?: string; light_mode?: string }) =>
+    apiFetch<DeterrenceServer>('/api/deterrence/style', json('POST', body)),
+  testDeterrence: (output: 'siren' | 'lights' | 'all', pattern?: string) =>
+    apiFetch<{ configured: boolean }>('/api/deterrence/test', json('POST', { output, pattern, seconds: 3 })),
+  dismissSuggestion: () => apiFetch<DeterrenceServer>('/api/deterrence/suggestion/dismiss', json('POST')),
+  deterrenceHistory: () => apiFetch<DeterrenceEpisode[]>('/api/deterrence/history'),
+  deterrenceProfiles: () => apiFetch<DeterrenceProfile[]>('/api/deterrence/profiles'),
+  broadcasts: () => apiFetch<BroadcastInfo>('/api/broadcasts'),
+  broadcast: (type: string, message?: string) =>
+    apiFetch<BroadcastRecord>('/api/broadcasts', json('POST', { type, message })),
 
   // Settings
   updateSettings: (patch: Partial<ServerSettings>) => apiFetch<ServerSettings>('/api/settings', json('PUT', patch)),
@@ -276,10 +293,13 @@ export interface EventHandlers {
   deterrence?: (d: RawDeterrence) => void;
   settings?: (d: ServerSettings) => void;
   analysis?: (d: Analysis) => void;
+  deterrence_episode?: (d: DeterrenceEpisode) => void;
+  broadcast?: (d: BroadcastRecord) => void;
 }
 
 const EVENT_TYPES = [
   'hello', 'cameras', 'detection', 'alert', 'alert_update', 'activity', 'deterrence', 'settings', 'analysis',
+  'deterrence_episode', 'broadcast',
 ] as const;
 
 /** Subscribe to /api/events. Returns a function that closes the stream. */

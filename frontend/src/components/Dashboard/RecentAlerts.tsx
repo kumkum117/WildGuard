@@ -5,11 +5,14 @@ import { formatRelative } from '../../utils/formatters';
 import GlowingBadge from '../Common/GlowingBadge';
 import { MapPin, ArrowUpRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { groupAlerts } from '../../utils/alertGroups';
 
 export default function RecentAlerts() {
   const alerts = useAlertStore((s) => s.alerts);
   const nav = useNavigate();
-  const recent = alerts.slice(0, 5);
+  // One row per incident (repeat alerts for the same animal/camera grouped).
+  const recent = useMemo(() => groupAlerts(alerts).slice(0, 5).map((g) => ({ ...g.latest, repeats: g.alerts.length })), [alerts]);
 
   return (
     <div data-testid="recent-alerts" className="glass rounded-3xl p-5 sm:p-6 border border-white/8">
@@ -48,6 +51,7 @@ export default function RecentAlerts() {
               <div className="flex items-center gap-2">
                 <div className="font-medium text-sm tracking-tight truncate">{a.animal}</div>
                 <GlowingBadge level={a.threatLevel}>{a.threatLevel}</GlowingBadge>
+                {a.repeats > 1 && <span className="font-mono text-[10px] text-white/40">×{a.repeats}</span>}
               </div>
               <div className="mt-1 flex items-center gap-3 text-[11px] text-white/45 font-mono">
                 <span className="inline-flex items-center gap-1">

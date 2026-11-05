@@ -46,7 +46,7 @@ from deterrence import DeterrenceController
 from event_bus import EventBus
 from media_analyzer import VIDEO_EXTS, MediaAnalyzer, media_kind
 from settings_store import SettingsStore
-from sms import build_gateway
+from sms import build_gateway, phone_list, send_bulk
 from wildlife_engine import WildlifeEngine, classify_threat, sensitivity_to_conf
 
 VERSION = "1.2.0"
@@ -70,6 +70,7 @@ class ServerContext:
         self.alerts = alerts
         self.deterrence = deterrence
         self.alert_store = None        # set once the camera fleet exists (AlertStore needs its lookup)
+        self.sms_info: dict = {}
         self.started_at = time.time()
         self.settings_snapshot: dict = {}
         self.apply_settings(store.settings)
@@ -206,6 +207,7 @@ def create_app(ctx: ServerContext, cameras: CameraManager, alert_store: AlertSto
                 "cooldown_seconds": alerts.cooldown_seconds,
             },
             "settings": ctx.settings_snapshot,
+            "sms": ctx.sms_info,
             "clients": ctx.bus.subscriber_count,
         }
 
@@ -408,20 +410,80 @@ def create_app(ctx: ServerContext, cameras: CameraManager, alert_store: AlertSto
     # Deterrence
     # ------------------------------------------------------------------
 
+    def actor() -> str:
+        return g.user["name"] if g.user else "Operator"
+
     @app.get("/api/deterrence")
     def get_deterrence():
         return jsonify(ctx.deterrence.get())
 
     @app.post("/api/deterrence")
     def set_deterrence():
+        """Legacy patch {siren, lights, mode, sound, pattern, light_mode}."""
         return jsonify(ctx.deterrence.update(body()))
+
+    @app.post("/api/deterrence/fire")
+    def deterrence_fire():
+        data = body()
+        zones = data.get("zones")
+        return jsonify(ctx.deterrence.fire(
+            siren=data.get("siren"), lights=data.get("lights"), pattern=data.get("pattern"),
+            light_mode=data.get("light_mode"), zones=zones if isinstance(zones, list) else None, actor=actor()))
+
+    @app.post("/api/deterrence/stop")
+    def deterrence_stop():
+        return jsonify(ctx.deterrence.stop(actor=actor()))
+
+    @app.post("/api/deterrence/extend")
+    def deterrence_extend():
+        try:
+            seconds = float(body().get("seconds", 30))
+        except (TypeError, ValueError):
+            return error("seconds must be a number")
+        return jsonify(ctx.deterrence.extend(seconds, actor=actor()))
+
+    @app.post("/api/deterrence/mode")
+    def deterrence_mode():
+        data = body()
+        return jsonify(ctx.deterrence.set_mode(str(data.get("mode", "")), actor=actor(),
+                                               extend=bool(data.get("extend"))))
+
+    @app.post("/api/deterrence/style")
+    def deterrence_style():
+        data = body()
+        return jsonify(ctx.deterrence.set_style(data.get("pattern"), data.get("light_mode")))
+
+    @app.post("/api/deterrence/test")
+    def deterrence_test():
+        data = body()
+        return jsonify(ctx.deterrence.test(str(data.get("output", "all")), data.get("seconds", 3),
+                                           data.get("pattern"), actor=actor()))
+
+    @app.post("/api/deterrence/suggestion/dismiss")
+    def deterrence_dismiss():
+        return jsonify(ctx.deterrence.dismiss_suggestion())
+
+    @app.get("/api/deterrence/history")
+    def deterrence_history():
+        return jsonify(ctx.deterrence.history(request.args.get("limit", 30, type=int)))
+
+    @app.get("/api/deterrence/profiles")
+    def deterrence_profiles():
+        return jsonify(ctx.deterrence.profiles())
+
+    @app.get("/api/broadcasts")
+    def broadcasts():
+        return jsonify(ctx.deterrence.broadcast_info())
 
     @app.post("/api/broadcasts")
     def broadcast():
-        kind = str(body().get("type", "")).strip()
-        if not kind:
-            return error("Broadcast type is required")
-        return jsonify(ctx.deterrence.broadcast(kind)), 201
+        data = body()
+        try:
+            record = ctx.deterrence.broadcast(str(data.get("type", "")).strip(), data.get("message"),
+                                              actor=actor())
+        except ValueError as exc:
+            return error(str(exc))
+        return jsonify(record), 201
 
     # ------------------------------------------------------------------
     # Settings
@@ -542,6 +604,49 @@ def create_app(ctx: ServerContext, cameras: CameraManager, alert_store: AlertSto
     return app
 
 
+def wire_sms(ctx: ServerContext, gateway, alert_store: AlertStore) -> None:
+    """Ranger texts for new alerts / escalations and villager broadcasts, when an
+    SMS gateway that can send free text and the numbers (.env) are configured."""
+    rangers = phone_list("ALERT_SMS_TO")
+    villagers = phone_list("VILLAGER_SMS_TO")
+    can_text = gateway.can_send_text
+    if not can_text:
+        reason = ("No SMS gateway configured" if gateway.delivery == "console"
+                  else f"{gateway.label} can only send sign-in codes")
+    else:
+        reason = None
+    ctx.sms_info = {"provider": gateway.label, "delivery": gateway.delivery, "can_send_text": can_text,
+                    "rangers": len(rangers), "villagers": len(villagers)}
+    ctx.deterrence.sms_status = {
+        "available": can_text and bool(villagers),
+        "recipients": len(villagers),
+        "provider": gateway.label,
+        "reason": reason or (None if villagers else "Add villager numbers to VILLAGER_SMS_TO in .env"),
+    }
+    if can_text and villagers:
+        ctx.deterrence.sms_sender = lambda text, done: send_bulk(gateway, villagers, text, done)
+
+    def text_rangers(text: str) -> None:
+        if can_text and rangers and ctx.settings_snapshot.get("notifications", {}).get("sms", True):
+            send_bulk(gateway, rangers, text)
+
+    def on_escalate(trigger: dict, reason_text: str) -> None:
+        text_rangers(f"WildGuard ESCALATION: {trigger.get('label') or 'Animal'} at "
+                     f"{trigger.get('camera') or 'a camera'} — {reason_text}. Ranger response needed.")
+
+    def on_alert(alert: dict) -> None:
+        if alert["camera_id"] == "UPLOAD":
+            return
+        when = time.strftime("%H:%M", time.localtime(alert["timestamp"]))
+        text_rangers(f"WildGuard ALERT: {alert['animal'].title()} ({alert['confidence']:.0%}) at "
+                     f"{alert['camera_name']}, {when}. Open the dashboard for the snapshot.")
+
+    ctx.deterrence.on_escalate = on_escalate
+    alert_store.listeners.append(on_alert)
+    if can_text:
+        print(f"[SMS] Free-text SMS via {gateway.label}: {len(rangers)} ranger(s), {len(villagers)} villager(s)")
+
+
 # ----------------------------------------------------------------------
 # Entry point
 # ----------------------------------------------------------------------
@@ -579,7 +684,9 @@ def main() -> None:
     alert_store.start_watcher(stop)
     ctx.alert_store = alert_store
     analyzer = MediaAnalyzer(ctx)
-    auth = AuthService(build_gateway())
+    gateway = build_gateway()
+    auth = AuthService(gateway)
+    wire_sms(ctx, gateway, alert_store)
 
     info = engine.info()
     bus.log("system", f"WildGuard server started — {info['model_type']} on {info['device'].upper()}"

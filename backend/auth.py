@@ -43,7 +43,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from sms import SmsError, SmsGateway
+from sms import PhoneError, SmsError, SmsGateway, normalize_phone
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SESSIONS_PATH = PROJECT_ROOT / "data" / "sessions.json"
@@ -195,24 +195,10 @@ class AuthService:
 
     def normalize(self, phone: str) -> str:
         """Return E.164 (+<country><number>) or raise AuthError."""
-        raw = (phone or "").strip()
-        digits = re.sub(r"\D", "", raw)
-        if raw.startswith("+"):
-            number = digits
-        elif raw.startswith("00"):
-            number = digits[2:]
-        elif len(digits) == 10:
-            number = self.country_code + digits
-        elif len(digits) == 11 and digits.startswith("0"):
-            number = self.country_code + digits[1:]
-        else:
-            number = digits
-        if not 8 <= len(number) <= 15:
-            raise AuthError("Enter a valid mobile number, e.g. +91 98765 43210", 400, "invalid_phone")
-        if number.startswith("91") and not re.fullmatch(r"91[6-9]\d{9}", number):
-            raise AuthError("Indian mobile numbers have 10 digits and start with 6, 7, 8 or 9",
-                            400, "invalid_phone")
-        return "+" + number
+        try:
+            return normalize_phone(phone, self.country_code)
+        except PhoneError as exc:
+            raise AuthError(str(exc), 400, "invalid_phone") from exc
 
     def _check_registered(self, number: str) -> None:
         if self.users and number not in self.users:

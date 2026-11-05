@@ -94,6 +94,7 @@ class AlertStore:
         self.camera_lookup = camera_lookup
         self.threat_fn = threat_fn
         self._email_state: "dict[int, int]" = {}
+        self.listeners: "list[Callable[[dict], None]]" = []   # called for every new alert row
         with self._connect() as conn:
             conn.execute(_STATUS_SCHEMA)
             conn.execute(_ACTIVITY_SCHEMA)
@@ -232,6 +233,11 @@ class AlertStore:
                 self._last_id = max(self._last_id, alert["id"])
                 self._email_state[alert["id"]] = int(alert["email_sent"])
                 self.bus.publish("alert", alert)
+                for listener in self.listeners:
+                    try:
+                        listener(alert)
+                    except Exception as exc:
+                        print(f"[AlertStore] alert listener failed — {exc}")
                 self.bus.log(
                     "alert",
                     f"{alert['animal'].title()} alert logged on {alert['camera_name']}"
